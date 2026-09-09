@@ -9,11 +9,13 @@ import { getDeviceStats, getStats, listTickets } from "@/lib/store";
 import {
   PRIORITY_LABELS,
   STATUS_LABELS,
+  type TicketSource,
   type TicketStatus,
 } from "@/lib/types";
 
 type SearchParams = Promise<{
   status?: string;
+  source?: string;
   q?: string;
 }>;
 
@@ -25,6 +27,25 @@ const FILTERS: Array<{ key: TicketStatus | "vsetky"; label: string }> = [
   { key: "hotove", label: "Hotové" },
 ];
 
+const SOURCE_FILTERS: Array<{ key: TicketSource | "vsetky"; label: string }> = [
+  { key: "vsetky", label: "Všetky zdroje" },
+  { key: "manual", label: "Ručné" },
+  { key: "auto", label: "Automatické" },
+];
+
+function ticketsHref(opts: {
+  status?: TicketStatus | "vsetky";
+  source?: TicketSource | "vsetky";
+  q?: string;
+}) {
+  const params = new URLSearchParams();
+  if (opts.status && opts.status !== "vsetky") params.set("status", opts.status);
+  if (opts.source && opts.source !== "vsetky") params.set("source", opts.source);
+  if (opts.q?.trim()) params.set("q", opts.q.trim());
+  const qs = params.toString();
+  return qs ? `/?${qs}` : "/";
+}
+
 export default async function Home({
   searchParams,
 }: {
@@ -33,10 +54,13 @@ export default async function Home({
   const params = await searchParams;
   const status =
     (params.status as TicketStatus | "vsetky" | undefined) ?? "vsetky";
+  const sourceRaw = params.source;
+  const source: TicketSource | "vsetky" =
+    sourceRaw === "manual" || sourceRaw === "auto" ? sourceRaw : "vsetky";
   const q = params.q ?? "";
 
   const [tickets, stats, deviceStats] = await Promise.all([
-    listTickets({ status, q }),
+    listTickets({ status, source, q }),
     getStats(),
     getDeviceStats(),
   ]);
@@ -94,44 +118,54 @@ export default async function Home({
         className="panel fade-up overflow-hidden"
         style={{ animationDelay: "120ms" }}
       >
-        <div className="flex flex-col gap-4 border-b border-[var(--line)] p-4 md:flex-row md:items-center md:justify-between md:p-5">
-          <form className="flex w-full flex-col gap-3 md:max-w-md md:flex-row">
-            <input type="hidden" name="status" value={status} />
-            <div className="field grow">
-              <label htmlFor="q" className="sr-only">
+        <div className="flex flex-col gap-4 border-b border-[var(--line)] p-4 md:p-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <form className="flex w-full flex-col gap-3 md:max-w-md md:flex-row">
+              <input type="hidden" name="status" value={status} />
+              {source !== "vsetky" ? (
+                <input type="hidden" name="source" value={source} />
+              ) : null}
+              <div className="field grow">
+                <label htmlFor="q" className="sr-only">
+                  Hľadať
+                </label>
+                <input
+                  id="q"
+                  name="q"
+                  defaultValue={q}
+                  placeholder="Hľadať zákazníka, sériové číslo, problém…"
+                />
+              </div>
+              <button type="submit" className="btn btn-ghost shrink-0">
                 Hľadať
-              </label>
-              <input
-                id="q"
-                name="q"
-                defaultValue={q}
-                placeholder="Hľadať zákazníka, sériové číslo, problém…"
-              />
-            </div>
-            <button type="submit" className="btn btn-ghost shrink-0">
-              Hľadať
-            </button>
-          </form>
+              </button>
+            </form>
 
-          <div className="flex flex-wrap gap-2">
-            {FILTERS.map((f) => {
-              const href =
-                f.key === "vsetky"
-                  ? q
-                    ? `/?q=${encodeURIComponent(q)}`
-                    : "/"
-                  : `/?status=${f.key}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
-              return (
+            <div className="flex flex-wrap gap-2">
+              {FILTERS.map((f) => (
                 <Link
                   key={f.key}
-                  href={href}
+                  href={ticketsHref({ status: f.key, source, q })}
                   className="filter-pill"
                   data-active={status === f.key}
                 >
                   {f.label}
                 </Link>
-              );
-            })}
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {SOURCE_FILTERS.map((f) => (
+              <Link
+                key={f.key}
+                href={ticketsHref({ status, source: f.key, q })}
+                className="filter-pill"
+                data-active={source === f.key}
+              >
+                {f.label}
+              </Link>
+            ))}
           </div>
         </div>
 

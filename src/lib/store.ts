@@ -31,6 +31,7 @@ import type {
   Ticket,
   TicketNote,
   TicketPriority,
+  TicketSource,
   TicketStatus,
   TicketStore,
 } from "./types";
@@ -523,6 +524,7 @@ export async function getDeviceStats() {
 
 export async function listTickets(filters?: {
   status?: TicketStatus | "vsetky";
+  source?: TicketSource | "vsetky";
   q?: string;
   deviceUuid?: string;
 }): Promise<Ticket[]> {
@@ -531,6 +533,10 @@ export async function listTickets(filters?: {
 
   if (filters?.status && filters.status !== "vsetky") {
     tickets = tickets.filter((t) => t.status === filters.status);
+  }
+
+  if (filters?.source && filters.source !== "vsetky") {
+    tickets = tickets.filter((t) => (t.source ?? "manual") === filters.source);
   }
 
   if (filters?.deviceUuid) {
