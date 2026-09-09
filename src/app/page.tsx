@@ -178,6 +178,9 @@ export default async function Home({
                     <span className={`chip ${priorityClass(ticket.priority)}`}>
                       {PRIORITY_LABELS[ticket.priority]}
                     </span>
+                    {ticket.source === "auto" ? (
+                      <span className="chip chip-warn">Auto</span>
+                    ) : null}
                   </div>
                 </Link>
               </li>

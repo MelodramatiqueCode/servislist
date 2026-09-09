@@ -32,6 +32,16 @@ const HEALTH_OPTIONS: { id: DeviceHealthFilter; label: string }[] = [
   { id: "alerts", label: "Všetky alerty" },
 ];
 
+function storeCountLabel(n: number) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${n} prevádzka`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return `${n} prevádzky`;
+  }
+  return `${n} prevádzok`;
+}
+
 function parseHealth(params: {
   health?: string;
   online?: string;
@@ -184,15 +194,11 @@ export default async function DevicesPage({
 
           <p className="text-sm text-[var(--ink-soft)]">
             Zobrazených{" "}
-            <strong className="text-[var(--ink)]">{devices.length}</strong>
-            {devices.length === 1
-              ? " prevádzka"
-              : devices.length >= 2 && devices.length <= 4
-                ? " prevádzky"
-                : " prevádzok"}
-            {q.trim() || (health && health !== "all")
-              ? ` podľa filtra${q.trim() ? ` „${q.trim()}“` : ""}`
-              : ""}
+            <strong className="text-[var(--ink)]">
+              {storeCountLabel(devices.length)}
+            </strong>
+            {q.trim() || (health && health !== "all") ? " podľa filtra" : ""}
+            {q.trim() ? ` „${q.trim()}“` : ""}
             {stats.total > 0 && devices.length !== stats.total
               ? ` z ${stats.total}`
               : ""}

@@ -78,6 +78,15 @@ export type ServiceDevice = {
   note: string;
 };
 
+export type TicketSource = "manual" | "auto";
+
+export type TicketAlertType =
+  | "offline"
+  | "undervolt"
+  | "hot"
+  | "disk"
+  | "vpn_down";
+
 export type Ticket = {
   id: string;
   number: number;
@@ -94,6 +103,8 @@ export type Ticket = {
   notes: TicketNote[];
   createdAt: string;
   updatedAt: string;
+  source?: TicketSource;
+  alertType?: TicketAlertType;
 };
 
 export type CreateTicketInput = {
@@ -106,6 +117,8 @@ export type CreateTicketInput = {
   customerPhone: string;
   assignedTo: string;
   priority: TicketPriority;
+  source?: TicketSource;
+  alertType?: TicketAlertType;
 };
 
 export type TicketStore = {

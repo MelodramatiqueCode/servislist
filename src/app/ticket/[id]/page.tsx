@@ -50,6 +50,12 @@ export default async function TicketDetailPage({
           <span className={`chip ${priorityClass(ticket.priority)}`}>
             {PRIORITY_LABELS[ticket.priority]}
           </span>
+          {ticket.source === "auto" ? (
+            <span className="chip chip-warn">
+              Auto
+              {ticket.alertType ? ` · ${ticket.alertType}` : ""}
+            </span>
+          ) : null}
         </div>
         <h1 className="text-3xl font-extrabold leading-tight md:text-4xl">
           {ticket.title}

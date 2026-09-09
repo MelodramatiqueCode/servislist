@@ -2,6 +2,15 @@ import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
 import {
+  ALERT_TYPES,
+  buildAlertTicket,
+  isAlertActive,
+  isAlertAutoCloseEnabled,
+  isAlertsEnabled,
+  recoveryNote,
+  type AlertType,
+} from "./alerts";
+import {
   fetchBalenaFleetDevices,
   getBalenaConfig,
   isBalenaConfigured,
@@ -65,6 +74,7 @@ async function readTicketStore(): Promise<TicketStore> {
   store.tickets = store.tickets.map((t) => ({
     ...t,
     deviceUuid: t.deviceUuid ?? "",
+    source: t.source ?? "manual",
   }));
   return store;
 }
@@ -174,10 +184,102 @@ export type SyncResult = {
   offline: number;
   added: number;
   updated: number;
+  alertsCreated: number;
+  alertsResolved: number;
   syncedAt: string;
   error?: string;
   configured: boolean;
 };
+
+const OPEN_STATUSES: TicketStatus[] = ["otvorene", "v_rieseni", "caka_diely"];
+
+function findOpenAlertTicket(
+  store: TicketStore,
+  deviceUuid: string,
+  alertType: AlertType,
+) {
+  return store.tickets.find(
+    (t) =>
+      t.source === "auto" &&
+      t.alertType === alertType &&
+      t.deviceUuid === deviceUuid &&
+      OPEN_STATUSES.includes(t.status),
+  );
+}
+
+export async function reconcileDeviceAlerts(
+  previous: ServiceDevice[],
+  current: ServiceDevice[],
+): Promise<{ created: number; resolved: number }> {
+  if (!isAlertsEnabled()) {
+    return { created: 0, resolved: 0 };
+  }
+
+  const prevMap = new Map(previous.map((d) => [d.uuid, d]));
+  const store = await readTicketStore();
+  const autoClose = isAlertAutoCloseEnabled();
+  let created = 0;
+  let resolved = 0;
+  const timestamp = nowIso();
+
+  for (const device of current) {
+    const prev = prevMap.get(device.uuid);
+
+    for (const type of ALERT_TYPES) {
+      const nowActive = isAlertActive(device, type);
+      const wasActive = prev ? isAlertActive(prev, type) : false;
+      const open = findOpenAlertTicket(store, device.uuid, type);
+
+      if (nowActive && !wasActive && !open) {
+        const input = buildAlertTicket(device, type);
+        const ticket: Ticket = {
+          id: randomUUID(),
+          number: store.nextNumber,
+          title: input.title,
+          description: input.description,
+          deviceType: input.deviceType,
+          deviceSerial: input.deviceSerial,
+          deviceUuid: input.deviceUuid,
+          customerName: input.customerName,
+          customerPhone: input.customerPhone,
+          assignedTo: input.assignedTo,
+          status: "otvorene",
+          priority: input.priority,
+          notes: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          source: "auto",
+          alertType: type,
+        };
+        store.nextNumber += 1;
+        store.tickets.unshift(ticket);
+        created += 1;
+        continue;
+      }
+
+      if (!nowActive && open) {
+        const note: TicketNote = {
+          id: randomUUID(),
+          text: recoveryNote(type, device),
+          author: "Automat",
+          createdAt: timestamp,
+        };
+        open.notes.push(note);
+        open.updatedAt = timestamp;
+        if (autoClose) {
+          open.status = "hotove";
+        }
+        resolved += 1;
+      }
+    }
+  }
+
+  if (created > 0 || resolved > 0) {
+    await writeTicketStore(store);
+  }
+
+  return { created, resolved };
+}
 
 export async function syncFromBalenaCloud(options?: {
   force?: boolean;
@@ -192,6 +294,8 @@ export async function syncFromBalenaCloud(options?: {
       offline: 0,
       added: 0,
       updated: 0,
+      alertsCreated: 0,
+      alertsResolved: 0,
       syncedAt: "",
       error:
         "Balena nie je nastavená. Pridaj BALENA_API_TOKEN do .env.local.",
@@ -211,6 +315,8 @@ export async function syncFromBalenaCloud(options?: {
         offline: existing.devices.length - online,
         added: 0,
         updated: 0,
+        alertsCreated: 0,
+        alertsResolved: 0,
         syncedAt: existing.syncedAt,
       };
     }
@@ -259,6 +365,8 @@ export async function syncFromBalenaCloud(options?: {
     }
 
     const devices = sortDevices([...byUuid.values()]);
+    const alerts = await reconcileDeviceAlerts(existing.devices, devices);
+
     const store: DeviceStore = {
       importedAt: existing.importedAt || syncedAt,
       syncedAt,
@@ -276,6 +384,8 @@ export async function syncFromBalenaCloud(options?: {
       offline: devices.length - online,
       added,
       updated,
+      alertsCreated: alerts.created,
+      alertsResolved: alerts.resolved,
       syncedAt,
     };
   } catch (error) {
@@ -292,6 +402,8 @@ export async function syncFromBalenaCloud(options?: {
       offline: store.devices.filter((d) => !d.isOnline).length,
       added: 0,
       updated: 0,
+      alertsCreated: 0,
+      alertsResolved: 0,
       syncedAt: store.syncedAt || "",
       error: message,
     };
@@ -453,6 +565,8 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
     notes: [],
     createdAt: timestamp,
     updatedAt: timestamp,
+    source: input.source ?? "manual",
+    alertType: input.alertType,
   };
 
   store.nextNumber += 1;

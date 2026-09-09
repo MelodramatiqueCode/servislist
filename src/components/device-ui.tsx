@@ -125,7 +125,13 @@ export function SyncBalenaButton({
       setMessage(
         `Synchronizované: ${json.count} · online ${json.online} · offline ${json.offline}` +
           (json.updated ? ` · zmeny ${json.updated}` : "") +
-          (json.added ? ` · nové ${json.added}` : ""),
+          (json.added ? ` · nové ${json.added}` : "") +
+          (json.alertsCreated
+            ? ` · nové alerty ${json.alertsCreated}`
+            : "") +
+          (json.alertsResolved
+            ? ` · vyriešené ${json.alertsResolved}`
+            : ""),
       );
       router.refresh();
     });
@@ -139,6 +145,10 @@ export function SyncBalenaButton({
           <p className="text-sm text-[var(--ink-soft)]">
             Fleet <span className="font-semibold">{fleetSlug}</span>
             {syncedAt ? ` · posledný sync ${formatDate(syncedAt)}` : ""}
+          </p>
+          <p className="mt-1 text-xs text-[var(--ink-soft)]">
+            Auto-tickety pri novom alerte (offline, undervolt, horúce, disk,
+            VPN). Pri zotavení poznámka a zatvorenie ticketu.
           </p>
           {!configured ? (
             <p className="mt-1 text-sm font-semibold text-[var(--amber)]">
