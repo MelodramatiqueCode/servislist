@@ -40,7 +40,7 @@ npm run dev
 | `BALENA_FLEET_SLUG` | napr. `ceo2/massiva` |
 | `ALERT_AUTO_TICKETS` | `1` / `0` |
 | `ALERT_AUTO_CLOSE` | `1` / `0` |
-| `CRON_SECRET` | náhodný secret pre cron sync |
+| `CRON_SECRET` | náhodný secret pre Vercel Cron |
 
 4. Deploy. Po prvom deployi (alebo v build/deploy hook) spusti migráciu:
 
