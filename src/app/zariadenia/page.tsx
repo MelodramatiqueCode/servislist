@@ -165,7 +165,7 @@ export default async function DevicesPage({
             </button>
           </form>
 
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {HEALTH_OPTIONS.map((opt) => {
               const count = healthCount(opt.id);
               const active = health === opt.id;
@@ -181,6 +181,23 @@ export default async function DevicesPage({
               );
             })}
           </div>
+
+          <p className="text-sm text-[var(--ink-soft)]">
+            Zobrazených{" "}
+            <strong className="text-[var(--ink)]">{devices.length}</strong>
+            {devices.length === 1
+              ? " prevádzka"
+              : devices.length >= 2 && devices.length <= 4
+                ? " prevádzky"
+                : " prevádzok"}
+            {q.trim() || (health && health !== "all")
+              ? ` podľa filtra${q.trim() ? ` „${q.trim()}“` : ""}`
+              : ""}
+            {stats.total > 0 && devices.length !== stats.total
+              ? ` z ${stats.total}`
+              : ""}
+            .
+          </p>
         </div>
 
         <div className="divide-y divide-[var(--line)]">
