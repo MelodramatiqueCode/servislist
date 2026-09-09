@@ -33,10 +33,25 @@ type BalenaApiDevice = {
   uuid: string;
   device_name: string;
   status: string | null;
+  overall_status: string | null;
   is_online: boolean;
+  is_connected_to_vpn: boolean | null;
+  api_heartbeat_state: string | null;
   supervisor_version: string | null;
   os_version: string | null;
   last_connectivity_event: string | null;
+  last_vpn_event: string | null;
+  ip_address: string | null;
+  public_address: string | null;
+  mac_address: string | null;
+  cpu_usage: number | null;
+  cpu_temp: number | null;
+  memory_usage: number | null;
+  memory_total: number | null;
+  storage_usage: number | null;
+  storage_total: number | null;
+  is_undervolted: boolean | null;
+  note: string | null;
   is_of__device_type?: Array<{ slug: string }> | { slug: string } | null;
   belongs_to__application?: Array<{ slug: string }> | { slug: string } | null;
 };
@@ -108,10 +123,25 @@ export async function fetchBalenaFleetDevices(
     "uuid",
     "device_name",
     "status",
+    "overall_status",
     "is_online",
+    "is_connected_to_vpn",
+    "api_heartbeat_state",
     "supervisor_version",
     "os_version",
     "last_connectivity_event",
+    "last_vpn_event",
+    "ip_address",
+    "public_address",
+    "mac_address",
+    "cpu_usage",
+    "cpu_temp",
+    "memory_usage",
+    "memory_total",
+    "storage_usage",
+    "storage_total",
+    "is_undervolted",
+    "note",
   ].join(",");
 
   const expand =
@@ -144,12 +174,28 @@ export async function fetchBalenaFleetDevices(
         uuid: row.uuid,
         device_name: row.device_name,
         status: row.status || "unknown",
+        overall_status: row.overall_status,
         is_online: Boolean(row.is_online),
+        is_connected_to_vpn: row.is_connected_to_vpn,
+        api_heartbeat_state: row.api_heartbeat_state,
         supervisor_version: row.supervisor_version || "",
         os_version: row.os_version || "",
         dashboard_url: `https://dashboard.balena-cloud.com/devices/${row.uuid}/summary`,
         fleet,
         device_type: deviceType,
+        last_connectivity_event: row.last_connectivity_event,
+        last_vpn_event: row.last_vpn_event,
+        ip_address: row.ip_address,
+        public_address: row.public_address,
+        mac_address: row.mac_address,
+        cpu_usage: row.cpu_usage,
+        cpu_temp: row.cpu_temp,
+        memory_usage: row.memory_usage,
+        memory_total: row.memory_total,
+        storage_usage: row.storage_usage,
+        storage_total: row.storage_total,
+        is_undervolted: row.is_undervolted,
+        note: row.note,
       });
     }
 

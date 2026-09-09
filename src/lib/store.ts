@@ -77,7 +77,9 @@ async function readDeviceStore(): Promise<DeviceStore> {
   await ensureDir();
   try {
     const raw = await fs.readFile(DEVICES_FILE, "utf8");
-    return JSON.parse(raw) as DeviceStore;
+    const store = JSON.parse(raw) as DeviceStore;
+    store.devices = store.devices.map(hydrateDevice);
+    return store;
   } catch {
     try {
       const exportRaw = await fs.readFile(
@@ -88,13 +90,53 @@ async function readDeviceStore(): Promise<DeviceStore> {
       if (Array.isArray(list) && list.length > 0) {
         await importBalenaDevices(list);
         const raw = await fs.readFile(DEVICES_FILE, "utf8");
-        return JSON.parse(raw) as DeviceStore;
+        const store = JSON.parse(raw) as DeviceStore;
+        store.devices = store.devices.map(hydrateDevice);
+        return store;
       }
     } catch {
       // no export yet
     }
     return { importedAt: "", devices: [] };
   }
+}
+
+function hydrateDevice(device: Partial<ServiceDevice> & Pick<ServiceDevice, "uuid" | "name">): ServiceDevice {
+  return {
+    uuid: device.uuid,
+    balenaId: device.balenaId ?? 0,
+    name: device.name,
+    code: device.code ?? "",
+    partner: device.partner ?? "",
+    city: device.city ?? "",
+    address: device.address ?? "",
+    phone: device.phone ?? "",
+    status: device.status ?? "",
+    overallStatus: device.overallStatus ?? "",
+    isOnline: Boolean(device.isOnline),
+    isConnectedToVpn: Boolean(device.isConnectedToVpn),
+    apiHeartbeat: device.apiHeartbeat ?? "",
+    supervisorVersion: device.supervisorVersion ?? "",
+    osVersion: device.osVersion ?? "",
+    dashboardUrl: device.dashboardUrl ?? "",
+    fleet: device.fleet ?? "",
+    deviceType: device.deviceType ?? "",
+    importedAt: device.importedAt ?? "",
+    lastSyncedAt: device.lastSyncedAt,
+    lastConnectivityEvent: device.lastConnectivityEvent ?? "",
+    lastVpnEvent: device.lastVpnEvent ?? "",
+    ipAddress: device.ipAddress ?? "",
+    publicAddress: device.publicAddress ?? "",
+    macAddress: device.macAddress ?? "",
+    cpuUsage: device.cpuUsage ?? null,
+    cpuTemp: device.cpuTemp ?? null,
+    memoryUsage: device.memoryUsage ?? null,
+    memoryTotal: device.memoryTotal ?? null,
+    storageUsage: device.storageUsage ?? null,
+    storageTotal: device.storageTotal ?? null,
+    isUndervolted: Boolean(device.isUndervolted),
+    note: device.note ?? "",
+  };
 }
 
 async function writeDeviceStore(store: DeviceStore) {
@@ -190,21 +232,13 @@ export async function syncFromBalenaCloud(options?: {
       }
 
       const next: ServiceDevice = {
-        ...prev,
-        balenaId: normalized.balenaId,
-        name: normalized.name,
+        ...normalized,
         code: normalized.code || prev.code,
         partner: normalized.partner || prev.partner,
         city: normalized.city || prev.city,
         address: normalized.address || prev.address,
         phone: normalized.phone || prev.phone,
-        status: normalized.status,
-        isOnline: normalized.isOnline,
-        supervisorVersion: normalized.supervisorVersion,
-        osVersion: normalized.osVersion,
-        dashboardUrl: normalized.dashboardUrl,
-        fleet: normalized.fleet,
-        deviceType: normalized.deviceType,
+        importedAt: prev.importedAt || syncedAt,
         lastSyncedAt: syncedAt,
       };
 
@@ -212,7 +246,10 @@ export async function syncFromBalenaCloud(options?: {
         prev.isOnline !== next.isOnline ||
         prev.status !== next.status ||
         prev.name !== next.name ||
-        prev.osVersion !== next.osVersion
+        prev.osVersion !== next.osVersion ||
+        prev.isUndervolted !== next.isUndervolted ||
+        prev.cpuTemp !== next.cpuTemp ||
+        prev.lastConnectivityEvent !== next.lastConnectivityEvent
       ) {
         updated += 1;
       }

@@ -69,7 +69,6 @@ export function parseDeviceName(deviceName: string) {
     city = parts[1];
     address = parts.slice(2).join(", ");
   } else if (parts.length === 2) {
-    // "code-partner-...,City address" or "code...,City"
     const second = parts[1];
     const cityMatch = second.match(/^([^0-9]+?)(?:\s+\d|$)/);
     if (cityMatch && second.includes(" ")) {
@@ -79,14 +78,12 @@ export function parseDeviceName(deviceName: string) {
       city = second;
     }
   } else if (rest) {
-    // single segment leftovers after code
     address = rest;
   }
 
   if (!address && rest && parts.length <= 1) {
     address = rest;
   } else if (rest && !address.includes(rest) && parts.length >= 2) {
-    // keep store label in address prefix when useful
     address = address ? `${rest}, ${address}` : rest;
   }
 
@@ -104,6 +101,10 @@ export function parseDeviceName(deviceName: string) {
   };
 }
 
+function numOrNull(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 export function normalizeBalenaDevice(
   raw: BalenaDeviceRaw,
   importedAt = new Date().toISOString(),
@@ -119,13 +120,29 @@ export function normalizeBalenaDevice(
     address: parsed.address,
     phone: parsed.phone,
     status: raw.status,
+    overallStatus: raw.overall_status || raw.status || "",
     isOnline: Boolean(raw.is_online),
+    isConnectedToVpn: Boolean(raw.is_connected_to_vpn),
+    apiHeartbeat: raw.api_heartbeat_state || "",
     supervisorVersion: raw.supervisor_version,
     osVersion: raw.os_version,
     dashboardUrl: raw.dashboard_url,
     fleet: raw.fleet,
     deviceType: raw.device_type,
     importedAt,
+    lastConnectivityEvent: raw.last_connectivity_event || "",
+    lastVpnEvent: raw.last_vpn_event || "",
+    ipAddress: raw.ip_address || "",
+    publicAddress: raw.public_address || "",
+    macAddress: raw.mac_address || "",
+    cpuUsage: numOrNull(raw.cpu_usage),
+    cpuTemp: numOrNull(raw.cpu_temp),
+    memoryUsage: numOrNull(raw.memory_usage),
+    memoryTotal: numOrNull(raw.memory_total),
+    storageUsage: numOrNull(raw.storage_usage),
+    storageTotal: numOrNull(raw.storage_total),
+    isUndervolted: Boolean(raw.is_undervolted),
+    note: raw.note || "",
   };
 }
 
@@ -133,4 +150,40 @@ export function hardwareLabel(deviceType: string) {
   if (deviceType.includes("raspberrypi4")) return "Raspberry Pi 4";
   if (deviceType.includes("raspberrypi3")) return "Raspberry Pi 3";
   return deviceType;
+}
+
+export function formatBytesMb(value: number | null | undefined) {
+  if (value == null) return "—";
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} GB`;
+  return `${Math.round(value)} MB`;
+}
+
+export function formatPercent(
+  used: number | null | undefined,
+  total: number | null | undefined,
+) {
+  if (used == null || total == null || total <= 0) return "—";
+  return `${Math.round((used / total) * 100)} %`;
+}
+
+export function memoryLabel(device: ServiceDevice) {
+  if (device.memoryUsage == null || device.memoryTotal == null) return "—";
+  return `${formatBytesMb(device.memoryUsage)} / ${formatBytesMb(device.memoryTotal)} (${formatPercent(device.memoryUsage, device.memoryTotal)})`;
+}
+
+export function storageLabel(device: ServiceDevice) {
+  if (device.storageUsage == null || device.storageTotal == null) return "—";
+  return `${formatBytesMb(device.storageUsage)} / ${formatBytesMb(device.storageTotal)} (${formatPercent(device.storageUsage, device.storageTotal)})`;
+}
+
+export function hasHealthAlert(device: ServiceDevice) {
+  return (
+    !device.isOnline ||
+    device.isUndervolted ||
+    (device.cpuTemp != null && device.cpuTemp >= 80) ||
+    (device.storageUsage != null &&
+      device.storageTotal != null &&
+      device.storageTotal > 0 &&
+      device.storageUsage / device.storageTotal >= 0.9)
+  );
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ImportDevicesPanel, SyncBalenaButton } from "@/components/device-ui";
 import { getBalenaConfig } from "@/lib/balena";
-import { hardwareLabel } from "@/lib/parse-device";
+import { hardwareLabel, hasHealthAlert } from "@/lib/parse-device";
 import {
   ensureFreshBalenaSync,
   getDeviceStats,
@@ -196,6 +196,15 @@ export default async function DevicesPage({
                     >
                       {d.isOnline ? "Online" : "Offline"}
                     </span>
+                    {d.isUndervolted ? (
+                      <span className="chip prio-urgentna">Undervolt</span>
+                    ) : null}
+                    {d.cpuTemp != null && d.cpuTemp >= 80 ? (
+                      <span className="chip prio-vysoka">{Math.round(d.cpuTemp)}°C</span>
+                    ) : null}
+                    {hasHealthAlert(d) && d.isOnline && !d.isUndervolted ? (
+                      <span className="chip prio-vysoka">Alert</span>
+                    ) : null}
                   </div>
                 </Link>
               </li>

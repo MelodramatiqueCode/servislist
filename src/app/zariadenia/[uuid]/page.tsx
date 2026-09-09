@@ -1,8 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { hardwareLabel } from "@/lib/parse-device";
+import {
+  hardwareLabel,
+  hasHealthAlert,
+  memoryLabel,
+  storageLabel,
+} from "@/lib/parse-device";
 import { formatDate, statusClass, ticketCode } from "@/lib/format";
-import { getDevice, listTickets } from "@/lib/store";
+import { ensureFreshBalenaSync, getDevice, listTickets } from "@/lib/store";
 import { STATUS_LABELS } from "@/lib/types";
 
 export default async function DeviceDetailPage({
@@ -11,10 +16,12 @@ export default async function DeviceDetailPage({
   params: Promise<{ uuid: string }>;
 }) {
   const { uuid } = await params;
+  await ensureFreshBalenaSync();
   const device = await getDevice(uuid);
   if (!device) notFound();
 
   const tickets = await listTickets({ deviceUuid: uuid });
+  const alert = hasHealthAlert(device);
 
   return (
     <div className="shell max-w-4xl space-y-6">
@@ -34,7 +41,15 @@ export default async function DeviceDetailPage({
           >
             {device.isOnline ? "Online" : "Offline"}
           </span>
-          <span className="chip prio-normalna">{device.status}</span>
+          <span className="chip prio-normalna">
+            {device.overallStatus || device.status}
+          </span>
+          {device.isUndervolted ? (
+            <span className="chip prio-urgentna">Undervoltage</span>
+          ) : null}
+          {alert && device.isOnline && !device.isUndervolted ? (
+            <span className="chip prio-vysoka">Pozor na zdravie</span>
+          ) : null}
         </div>
         <h1 className="text-3xl font-extrabold md:text-4xl">
           {device.city || device.name}
@@ -43,18 +58,80 @@ export default async function DeviceDetailPage({
       </div>
 
       <div className="grid gap-5 md:grid-cols-[1.3fr_0.9fr]">
-        <section className="panel fade-up space-y-4 p-5 md:p-6">
-          <h2 className="text-lg font-bold">Údaje predajne</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Info label="Partner" value={device.partner || "—"} />
-            <Info label="Mesto" value={device.city || "—"} />
-            <Info label="Adresa" value={device.address || "—"} />
-            <Info label="Telefón" value={device.phone || "—"} />
-            <Info label="Hardware" value={hardwareLabel(device.deviceType)} />
-            <Info label="Fleet" value={device.fleet} />
-            <Info label="OS" value={device.osVersion} />
-            <Info label="Supervisor" value={device.supervisorVersion} />
+        <section className="panel fade-up space-y-5 p-5 md:p-6">
+          <div>
+            <h2 className="mb-3 text-lg font-bold">Údaje predajne</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Info label="Partner" value={device.partner || "—"} />
+              <Info label="Mesto" value={device.city || "—"} />
+              <Info label="Adresa" value={device.address || "—"} />
+              <Info label="Telefón" value={device.phone || "—"} />
+              <Info label="Hardware" value={hardwareLabel(device.deviceType)} />
+              <Info label="Fleet" value={device.fleet} />
+              <Info label="OS" value={device.osVersion || "—"} />
+              <Info label="Supervisor" value={device.supervisorVersion || "—"} />
+            </div>
           </div>
+
+          <div>
+            <h2 className="mb-3 text-lg font-bold">Live telemetria</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Info
+                label="Posledné spojenie"
+                value={
+                  device.lastConnectivityEvent
+                    ? formatDate(device.lastConnectivityEvent)
+                    : "—"
+                }
+              />
+              <Info
+                label="VPN"
+                value={
+                  device.isConnectedToVpn
+                    ? "Pripojené"
+                    : device.lastVpnEvent
+                      ? `Nepripojené · ${formatDate(device.lastVpnEvent)}`
+                      : "Nepripojené"
+                }
+              />
+              <Info label="Heartbeat" value={device.apiHeartbeat || "—"} />
+              <Info
+                label="Undervoltage"
+                value={device.isUndervolted ? "Áno — skontroluj napájanie" : "Nie"}
+              />
+              <Info
+                label="CPU"
+                value={
+                  device.cpuUsage != null
+                    ? `${Math.round(device.cpuUsage)} %`
+                    : "—"
+                }
+              />
+              <Info
+                label="Teplota CPU"
+                value={
+                  device.cpuTemp != null
+                    ? `${Math.round(device.cpuTemp)} °C`
+                    : "—"
+                }
+              />
+              <Info label="RAM" value={memoryLabel(device)} />
+              <Info label="Disk" value={storageLabel(device)} />
+              <Info label="Lokálna IP" value={device.ipAddress || "—"} />
+              <Info label="Verejná IP" value={device.publicAddress || "—"} />
+              <Info label="MAC" value={device.macAddress || "—"} />
+            </div>
+          </div>
+
+          {device.note ? (
+            <div className="note">
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
+                Poznámka v Balena
+              </div>
+              <p className="whitespace-pre-wrap">{device.note}</p>
+            </div>
+          ) : null}
+
           <div className="rounded-xl border border-[var(--line)] bg-white/60 px-3.5 py-3">
             <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
               UUID

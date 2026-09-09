@@ -24,6 +24,22 @@ export type BalenaDeviceRaw = {
   dashboard_url: string;
   fleet: string;
   device_type: string;
+  last_connectivity_event?: string | null;
+  last_vpn_event?: string | null;
+  is_connected_to_vpn?: boolean | null;
+  api_heartbeat_state?: string | null;
+  overall_status?: string | null;
+  ip_address?: string | null;
+  public_address?: string | null;
+  mac_address?: string | null;
+  cpu_usage?: number | null;
+  cpu_temp?: number | null;
+  memory_usage?: number | null;
+  memory_total?: number | null;
+  storage_usage?: number | null;
+  storage_total?: number | null;
+  is_undervolted?: boolean | null;
+  note?: string | null;
 };
 
 export type ServiceDevice = {
@@ -36,7 +52,10 @@ export type ServiceDevice = {
   address: string;
   phone: string;
   status: string;
+  overallStatus: string;
   isOnline: boolean;
+  isConnectedToVpn: boolean;
+  apiHeartbeat: string;
   supervisorVersion: string;
   osVersion: string;
   dashboardUrl: string;
@@ -44,6 +63,19 @@ export type ServiceDevice = {
   deviceType: string;
   importedAt: string;
   lastSyncedAt?: string;
+  lastConnectivityEvent: string;
+  lastVpnEvent: string;
+  ipAddress: string;
+  publicAddress: string;
+  macAddress: string;
+  cpuUsage: number | null;
+  cpuTemp: number | null;
+  memoryUsage: number | null;
+  memoryTotal: number | null;
+  storageUsage: number | null;
+  storageTotal: number | null;
+  isUndervolted: boolean;
+  note: string;
 };
 
 export type Ticket = {
