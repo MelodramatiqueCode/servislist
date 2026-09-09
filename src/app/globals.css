@@ -208,6 +208,30 @@ h3,
   line-height: 1.2;
 }
 
+.chip-active {
+  background: var(--teal);
+  color: #fff;
+  border-color: var(--teal-deep);
+}
+
+.chip-ok {
+  background: #e7f6ef;
+  color: var(--ok);
+  border-color: #bfe3cf;
+}
+
+.chip-warn {
+  background: var(--amber-soft);
+  color: #8a4a0f;
+  border-color: #e2b87a;
+}
+
+.chip-danger {
+  background: #fde8e6;
+  color: var(--danger);
+  border-color: #f0b4ae;
+}
+
 .status-otvorene {
   background: #e8f2ff;
   color: #1d4f91;
