@@ -1,42 +1,69 @@
 # ServisList
 
-Ticketing pre servis Balena zariadení v predajniach (to-do list pre servisákov).
+Ticketing pre servis Balena zariadení v predajniach.
 
-## Čo vie
+## Stack
 
-- Katalog Balena zariadení (predajne, online/offline, partner, telefón)
-- **Live sync** online stavu z Balena Cloud API
-- Tickety naviazané na konkrétne Pi / predajňu
-- Filter podľa partnera / online, poznámky, priorita, link na dashboard
+- Next.js App Router + TypeScript + Tailwind
+- Balena Cloud API
+- **Neon Postgres** (produkcia / Vercel) alebo lokálne JSON (`data/`)
 
-## Spustenie
+## Lokálny beh
 
 ```bash
 npm install
 cp .env.example .env.local
-# doplň BALENA_API_TOKEN z Balena dashboard → Preferences → Access tokens
+# doplň BALENA_API_TOKEN
 npm run dev
 ```
 
-Otvor [http://localhost:3000](http://localhost:3000).
+Bez `DATABASE_URL` apka používa JSON súbory v `data/` (vhodné na vývoj).
 
-### Env
+S Neon DB:
+
+```bash
+# v .env.local nastav DATABASE_URL z Neon dashboardu
+npm run db:migrate
+npm run dev
+```
+
+## Deploy na Vercel
+
+1. Pushni repo na GitHub a importuj projekt do [Vercel](https://vercel.com).
+2. V projekte pridaj **Neon** (Storage / Marketplace) — Vercel doplní `DATABASE_URL`.
+3. Nastav Environment Variables:
 
 | Premenná | Popis |
 |---|---|
-| `BALENA_API_TOKEN` | API key / session token z Balena |
-| `BALENA_FLEET_SLUG` | default `ceo2/massiva` |
+| `DATABASE_URL` | Neon connection string (z Marketplace) |
+| `BALENA_API_TOKEN` | Balena access token |
+| `BALENA_FLEET_SLUG` | napr. `ceo2/massiva` |
+| `ALERT_AUTO_TICKETS` | `1` / `0` |
+| `ALERT_AUTO_CLOSE` | `1` / `0` |
+| `CRON_SECRET` | náhodný secret pre cron sync |
 
-Na stránke **Zariadenia** je tlačidlo **Obnoviť online stav**. Ak je token nastavený, stránka syncne aj automaticky (max raz za 2 minúty).
-
-Manual sync:
+4. Deploy. Po prvom deployi (alebo v build/deploy hook) spusti migráciu:
 
 ```bash
-curl -X POST http://localhost:3000/api/sync-balena?force=1
+# lokálne proti produkčnej DATABASE_URL
+DATABASE_URL='...' npm run db:migrate
 ```
 
-## Stack
+Alebo otvor appku / spusti sync — schema sa vytvorí aj lazy pri prvom DB prístupe (`ensureSchema`).
 
-- Next.js (App Router) + TypeScript + Tailwind CSS
-- Balena Cloud API (`/v7/device`)
-- Lokálne JSON súbory pre tickety a cache zariadení
+5. Cron: `vercel.json` syncuje flotilu každých 5 minút cez `/api/sync-balena?force=1`.
+   - Na **Hobby** pláne môže byť cron obmedzený (max 1× denne) — uprav `schedule` alebo upgradni Pro.
+6. Odporúčané: zapni **Deployment Protection** / heslo, kým nemáte auth.
+
+### Manuálny sync
+
+```bash
+curl -X POST "https://YOUR_APP.vercel.app/api/sync-balena?force=1" \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+## Čo vie
+
+- Katalóg Balena zariadení (online/offline, undervolt, teplota, disk, VPN)
+- Live sync + auto-tickety pri nových health alertaoch
+- Tickety naviazané na UUID zariadenia, poznámky, priority

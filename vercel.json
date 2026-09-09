@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/sync-balena?force=1",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

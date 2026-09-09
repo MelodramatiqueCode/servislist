@@ -2,6 +2,13 @@ import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
 import {
+  dbReadDeviceStore,
+  dbReadTicketStore,
+  dbWriteDeviceStore,
+  dbWriteTicketStore,
+  isDatabaseConfigured,
+} from "./db";
+import {
   ALERT_TYPES,
   buildAlertTicket,
   isAlertActive,
@@ -68,6 +75,9 @@ async function ensureTicketsFile() {
 }
 
 async function readTicketStore(): Promise<TicketStore> {
+  if (isDatabaseConfigured()) {
+    return dbReadTicketStore();
+  }
   await ensureTicketsFile();
   const raw = await fs.readFile(TICKETS_FILE, "utf8");
   const store = JSON.parse(raw) as TicketStore;
@@ -80,11 +90,18 @@ async function readTicketStore(): Promise<TicketStore> {
 }
 
 async function writeTicketStore(store: TicketStore) {
+  if (isDatabaseConfigured()) {
+    await dbWriteTicketStore(store);
+    return;
+  }
   await ensureDir();
   await fs.writeFile(TICKETS_FILE, JSON.stringify(store, null, 2), "utf8");
 }
 
 async function readDeviceStore(): Promise<DeviceStore> {
+  if (isDatabaseConfigured()) {
+    return dbReadDeviceStore();
+  }
   await ensureDir();
   try {
     const raw = await fs.readFile(DEVICES_FILE, "utf8");
@@ -151,6 +168,10 @@ function hydrateDevice(device: Partial<ServiceDevice> & Pick<ServiceDevice, "uui
 }
 
 async function writeDeviceStore(store: DeviceStore) {
+  if (isDatabaseConfigured()) {
+    await dbWriteDeviceStore(store);
+    return;
+  }
   await ensureDir();
   await fs.writeFile(DEVICES_FILE, JSON.stringify(store, null, 2), "utf8");
 }
