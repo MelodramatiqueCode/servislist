@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { formatDate } from "@/lib/format";
 
 type DeviceOption = {
   uuid: string;
@@ -93,6 +94,77 @@ export function DevicePicker({
           )}
         </ul>
       )}
+    </div>
+  );
+}
+
+export function SyncBalenaButton({
+  configured,
+  syncedAt,
+  fleetSlug,
+  lastSyncError,
+}: {
+  configured: boolean;
+  syncedAt: string;
+  fleetSlug: string;
+  lastSyncError?: string;
+}) {
+  const router = useRouter();
+  const [message, setMessage] = useState("");
+  const [pending, startTransition] = useTransition();
+
+  function onSync() {
+    startTransition(async () => {
+      setMessage("");
+      const res = await fetch("/api/sync-balena?force=1", { method: "POST" });
+      const json = await res.json();
+      if (!json.ok) {
+        setMessage(json.error || "Sync zlyhal");
+        return;
+      }
+      setMessage(
+        `Synchronizované: ${json.count} · online ${json.online} · offline ${json.offline}` +
+          (json.updated ? ` · zmeny ${json.updated}` : "") +
+          (json.added ? ` · nové ${json.added}` : ""),
+      );
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="panel space-y-3 p-4 md:p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-lg font-bold">Live stav z Balena Cloud</h2>
+          <p className="text-sm text-[var(--ink-soft)]">
+            Fleet <span className="font-semibold">{fleetSlug}</span>
+            {syncedAt ? ` · posledný sync ${formatDate(syncedAt)}` : ""}
+          </p>
+          {!configured ? (
+            <p className="mt-1 text-sm font-semibold text-[var(--amber)]">
+              Nastav <code>BALENA_API_TOKEN</code> v <code>.env.local</code>.
+            </p>
+          ) : null}
+          {lastSyncError ? (
+            <p className="mt-1 text-sm font-semibold text-[var(--danger)]">
+              {lastSyncError}
+            </p>
+          ) : null}
+          {message ? (
+            <p className="mt-1 text-sm font-semibold text-[var(--teal-deep)]">
+              {message}
+            </p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary shrink-0"
+          disabled={pending || !configured}
+          onClick={onSync}
+        >
+          {pending ? "Synchronizujem…" : "Obnoviť online stav"}
+        </button>
+      </div>
     </div>
   );
 }

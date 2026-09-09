@@ -43,6 +43,7 @@ export type ServiceDevice = {
   fleet: string;
   deviceType: string;
   importedAt: string;
+  lastSyncedAt?: string;
 };
 
 export type Ticket = {
@@ -82,6 +83,8 @@ export type TicketStore = {
 
 export type DeviceStore = {
   importedAt: string;
+  syncedAt?: string;
+  lastSyncError?: string;
   devices: ServiceDevice[];
 };
 

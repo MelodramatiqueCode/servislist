@@ -1,6 +1,11 @@
 import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
+import {
+  fetchBalenaFleetDevices,
+  getBalenaConfig,
+  isBalenaConfigured,
+} from "./balena";
 import { normalizeBalenaDevice } from "./parse-device";
 import type {
   BalenaDeviceRaw,
@@ -17,17 +22,26 @@ import type {
 const DATA_DIR = path.join(process.cwd(), "data");
 const TICKETS_FILE = path.join(DATA_DIR, "tickets.json");
 const DEVICES_FILE = path.join(DATA_DIR, "devices.json");
+const STALE_MS = 2 * 60 * 1000;
 
 function nowIso() {
   return new Date().toISOString();
 }
 
 function seedTickets(): TicketStore {
-  const createdAt = nowIso();
   return {
     nextNumber: 1,
     tickets: [],
   };
+}
+
+function sortDevices(devices: ServiceDevice[]) {
+  return [...devices].sort((a, b) => {
+    const ac = Number(a.code) || Number.MAX_SAFE_INTEGER;
+    const bc = Number(b.code) || Number.MAX_SAFE_INTEGER;
+    if (ac !== bc) return ac - bc;
+    return a.name.localeCompare(b.name, "sk");
+  });
 }
 
 async function ensureDir() {
@@ -65,7 +79,6 @@ async function readDeviceStore(): Promise<DeviceStore> {
     const raw = await fs.readFile(DEVICES_FILE, "utf8");
     return JSON.parse(raw) as DeviceStore;
   } catch {
-    // Bootstrap from Balena export if present
     try {
       const exportRaw = await fs.readFile(
         path.join(DATA_DIR, "balena-export.json"),
@@ -102,16 +115,165 @@ export async function importBalenaDevices(
 
   const store: DeviceStore = {
     importedAt,
-    devices: [...byUuid.values()].sort((a, b) => {
-      const ac = Number(a.code) || Number.MAX_SAFE_INTEGER;
-      const bc = Number(b.code) || Number.MAX_SAFE_INTEGER;
-      if (ac !== bc) return ac - bc;
-      return a.name.localeCompare(b.name, "sk");
-    }),
+    syncedAt: importedAt,
+    lastSyncError: "",
+    devices: sortDevices([...byUuid.values()]),
   };
 
   await writeDeviceStore(store);
   return { count: store.devices.length };
+}
+
+export type SyncResult = {
+  ok: boolean;
+  count: number;
+  online: number;
+  offline: number;
+  added: number;
+  updated: number;
+  syncedAt: string;
+  error?: string;
+  configured: boolean;
+};
+
+export async function syncFromBalenaCloud(options?: {
+  force?: boolean;
+}): Promise<SyncResult> {
+  const config = getBalenaConfig();
+  if (!config) {
+    return {
+      ok: false,
+      configured: false,
+      count: 0,
+      online: 0,
+      offline: 0,
+      added: 0,
+      updated: 0,
+      syncedAt: "",
+      error:
+        "Balena nie je nastavená. Pridaj BALENA_API_TOKEN do .env.local.",
+    };
+  }
+
+  const existing = await readDeviceStore();
+  if (!options?.force && existing.syncedAt) {
+    const age = Date.now() - new Date(existing.syncedAt).getTime();
+    if (age >= 0 && age < STALE_MS) {
+      const online = existing.devices.filter((d) => d.isOnline).length;
+      return {
+        ok: true,
+        configured: true,
+        count: existing.devices.length,
+        online,
+        offline: existing.devices.length - online,
+        added: 0,
+        updated: 0,
+        syncedAt: existing.syncedAt,
+      };
+    }
+  }
+
+  try {
+    const remote = await fetchBalenaFleetDevices(config);
+    const syncedAt = nowIso();
+    const byUuid = new Map(existing.devices.map((d) => [d.uuid, d]));
+    let added = 0;
+    let updated = 0;
+
+    for (const raw of remote) {
+      const normalized = normalizeBalenaDevice(raw, syncedAt);
+      const prev = byUuid.get(raw.uuid);
+      if (!prev) {
+        byUuid.set(raw.uuid, { ...normalized, lastSyncedAt: syncedAt });
+        added += 1;
+        continue;
+      }
+
+      const next: ServiceDevice = {
+        ...prev,
+        balenaId: normalized.balenaId,
+        name: normalized.name,
+        code: normalized.code || prev.code,
+        partner: normalized.partner || prev.partner,
+        city: normalized.city || prev.city,
+        address: normalized.address || prev.address,
+        phone: normalized.phone || prev.phone,
+        status: normalized.status,
+        isOnline: normalized.isOnline,
+        supervisorVersion: normalized.supervisorVersion,
+        osVersion: normalized.osVersion,
+        dashboardUrl: normalized.dashboardUrl,
+        fleet: normalized.fleet,
+        deviceType: normalized.deviceType,
+        lastSyncedAt: syncedAt,
+      };
+
+      if (
+        prev.isOnline !== next.isOnline ||
+        prev.status !== next.status ||
+        prev.name !== next.name ||
+        prev.osVersion !== next.osVersion
+      ) {
+        updated += 1;
+      }
+
+      byUuid.set(raw.uuid, next);
+    }
+
+    const devices = sortDevices([...byUuid.values()]);
+    const store: DeviceStore = {
+      importedAt: existing.importedAt || syncedAt,
+      syncedAt,
+      lastSyncError: "",
+      devices,
+    };
+    await writeDeviceStore(store);
+
+    const online = devices.filter((d) => d.isOnline).length;
+    return {
+      ok: true,
+      configured: true,
+      count: devices.length,
+      online,
+      offline: devices.length - online,
+      added,
+      updated,
+      syncedAt,
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Sync z Baleny zlyhal.";
+    const store = await readDeviceStore();
+    store.lastSyncError = message;
+    await writeDeviceStore(store);
+    return {
+      ok: false,
+      configured: true,
+      count: store.devices.length,
+      online: store.devices.filter((d) => d.isOnline).length,
+      offline: store.devices.filter((d) => !d.isOnline).length,
+      added: 0,
+      updated: 0,
+      syncedAt: store.syncedAt || "",
+      error: message,
+    };
+  }
+}
+
+export async function ensureFreshBalenaSync() {
+  if (!isBalenaConfigured()) return null;
+  return syncFromBalenaCloud({ force: false });
+}
+
+export async function getSyncMeta() {
+  const store = await readDeviceStore();
+  return {
+    configured: isBalenaConfigured(),
+    fleetSlug: getBalenaConfig()?.fleetSlug || "ceo2/massiva",
+    syncedAt: store.syncedAt || "",
+    lastSyncError: store.lastSyncError || "",
+    count: store.devices.length,
+  };
 }
 
 export async function listDevices(filters?: {
@@ -165,12 +327,16 @@ export async function getDevice(uuid: string): Promise<ServiceDevice | null> {
 export async function getDeviceStats() {
   const devices = await listDevices();
   const partners = new Set(devices.map((d) => d.partner).filter(Boolean));
+  const store = await readDeviceStore();
   return {
     total: devices.length,
     online: devices.filter((d) => d.isOnline).length,
     offline: devices.filter((d) => !d.isOnline).length,
     partners: [...partners].sort((a, b) => a.localeCompare(b, "sk")),
-    importedAt: (await readDeviceStore()).importedAt,
+    importedAt: store.importedAt,
+    syncedAt: store.syncedAt || "",
+    lastSyncError: store.lastSyncError || "",
+    configured: isBalenaConfigured(),
   };
 }
 

@@ -1,7 +1,12 @@
 import Link from "next/link";
-import { ImportDevicesPanel } from "@/components/device-ui";
+import { ImportDevicesPanel, SyncBalenaButton } from "@/components/device-ui";
+import { getBalenaConfig } from "@/lib/balena";
 import { hardwareLabel } from "@/lib/parse-device";
-import { getDeviceStats, listDevices } from "@/lib/store";
+import {
+  ensureFreshBalenaSync,
+  getDeviceStats,
+  listDevices,
+} from "@/lib/store";
 
 type SearchParams = Promise<{
   q?: string;
@@ -22,10 +27,14 @@ export default async function DevicesPage({
       : "all";
   const partner = params.partner ?? "all";
 
+  await ensureFreshBalenaSync();
+
   const [devices, stats] = await Promise.all([
     listDevices({ q, online, partner }),
     getDeviceStats(),
   ]);
+
+  const fleetSlug = getBalenaConfig()?.fleetSlug || "ceo2/massiva";
 
   const qs = (next: Record<string, string>) => {
     const sp = new URLSearchParams();
@@ -52,10 +61,16 @@ export default async function DevicesPage({
         </p>
         <h1 className="text-4xl font-extrabold md:text-5xl">Zariadenia</h1>
         <p className="max-w-2xl text-lg text-[var(--ink-soft)]">
-          Predajne a Raspberry Pi z flotily. Vyber zariadenie a založ servisný
-          ticket.
+          Predajne a Raspberry Pi z flotily. Live online stav z Balena Cloud.
         </p>
       </section>
+
+      <SyncBalenaButton
+        configured={stats.configured}
+        syncedAt={stats.syncedAt}
+        fleetSlug={fleetSlug}
+        lastSyncError={stats.lastSyncError}
+      />
 
       <section
         className="fade-up grid grid-cols-2 gap-3 md:grid-cols-4"
@@ -147,7 +162,7 @@ export default async function DevicesPage({
           <div className="space-y-3 p-8 text-center">
             <p className="text-lg font-semibold">Zatiaľ žiadne zariadenia</p>
             <p className="text-[var(--ink-soft)]">
-              Importuj JSON export z Balena Cloud nižšie.
+              Nastav Balena token a stlač sync, alebo importuj JSON export.
             </p>
           </div>
         ) : (
