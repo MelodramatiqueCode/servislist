@@ -201,6 +201,13 @@ h3,
   border: 1px solid transparent;
 }
 
+.chip-compact {
+  gap: 0.2rem;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
 .status-otvorene {
   background: #e8f2ff;
   color: #1d4f91;

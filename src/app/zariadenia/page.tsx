@@ -19,7 +19,6 @@ type SearchParams = Promise<{
   q?: string;
   health?: string;
   online?: string;
-  partner?: string;
 }>;
 
 const HEALTH_OPTIONS: { id: DeviceHealthFilter; label: string }[] = [
@@ -41,7 +40,6 @@ function parseHealth(params: {
   if (params.health && allowed.has(params.health as DeviceHealthFilter)) {
     return params.health as DeviceHealthFilter;
   }
-  // spätná kompatibilita so starým ?online=
   if (params.online === "online" || params.online === "offline") {
     return params.online;
   }
@@ -56,12 +54,11 @@ export default async function DevicesPage({
   const params = await searchParams;
   const q = params.q ?? "";
   const health = parseHealth(params);
-  const partner = params.partner ?? "all";
 
   await ensureFreshBalenaSync();
 
   const [devices, stats] = await Promise.all([
-    listDevices({ q, health, partner }),
+    listDevices({ q, health }),
     getDeviceStats(),
   ]);
 
@@ -81,18 +78,10 @@ export default async function DevicesPage({
 
   const qs = (next: Record<string, string>) => {
     const sp = new URLSearchParams();
-    const merged = {
-      q,
-      health,
-      partner,
-      ...next,
-    };
+    const merged = { q, health, ...next };
     if (merged.q) sp.set("q", merged.q);
     if (merged.health && merged.health !== "all") {
       sp.set("health", merged.health);
-    }
-    if (merged.partner && merged.partner !== "all") {
-      sp.set("partner", merged.partner);
     }
     const s = sp.toString();
     return s ? `/zariadenia?${s}` : "/zariadenia";
@@ -157,10 +146,9 @@ export default async function DevicesPage({
         className="panel fade-up overflow-hidden"
         style={{ animationDelay: "80ms" }}
       >
-        <div className="flex flex-col gap-4 border-b border-[var(--line)] p-4 md:p-5">
-          <form className="flex w-full flex-col gap-3 md:flex-row">
+        <div className="flex flex-col gap-3 border-b border-[var(--line)] p-3 md:p-4">
+          <form className="flex w-full flex-col gap-2 md:flex-row">
             <input type="hidden" name="health" value={health ?? "all"} />
-            <input type="hidden" name="partner" value={partner} />
             <div className="field grow">
               <label htmlFor="q" className="sr-only">
                 Hľadať
@@ -177,49 +165,21 @@ export default async function DevicesPage({
             </button>
           </form>
 
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
-              Stav / health
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {HEALTH_OPTIONS.map((opt) => {
-                const count = healthCount(opt.id);
-                const active = health === opt.id;
-                return (
-                  <Link
-                    key={String(opt.id)}
-                    href={qs({ health: opt.id ?? "all" })}
-                    className={`chip ${active ? "chip-active" : ""}`}
-                  >
-                    {opt.label}
-                    <span className="opacity-70">({count})</span>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
-              Partner
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href={qs({ partner: "all" })}
-                className={`chip ${partner === "all" ? "chip-active" : ""}`}
-              >
-                Všetci
-              </Link>
-              {stats.partners.map((p) => (
+          <div className="flex flex-wrap gap-1.5">
+            {HEALTH_OPTIONS.map((opt) => {
+              const count = healthCount(opt.id);
+              const active = health === opt.id;
+              return (
                 <Link
-                  key={p}
-                  href={qs({ partner: p })}
-                  className={`chip ${partner === p ? "chip-active" : ""}`}
+                  key={String(opt.id)}
+                  href={qs({ health: opt.id ?? "all" })}
+                  className={`chip ${active ? "chip-active" : ""}`}
                 >
-                  {p}
+                  {opt.label}
+                  <span className="opacity-70">({count})</span>
                 </Link>
-              ))}
-            </div>
+              );
+            })}
           </div>
         </div>
 
@@ -232,50 +192,63 @@ export default async function DevicesPage({
           ) : (
             devices.map((d) => {
               const alert = hasHealthAlert(d);
+              const meta = [d.city, d.partner, d.code].filter(Boolean).join(" · ");
               return (
                 <Link
                   key={d.uuid}
                   href={`/zariadenia/${d.uuid}`}
-                  className="flex flex-col gap-2 px-4 py-4 transition hover:bg-[var(--sand)] md:flex-row md:items-center md:justify-between md:px-5"
+                  className="flex items-center gap-2 px-3 py-1.5 transition hover:bg-[var(--sand)] md:gap-3 md:px-4"
                 >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <strong className="text-lg">{d.name}</strong>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <strong className="truncate text-sm font-semibold md:text-[0.95rem]">
+                        {d.name}
+                      </strong>
                       <span
-                        className={`chip ${d.isOnline ? "chip-ok" : "chip-danger"}`}
+                        className={`chip chip-compact ${d.isOnline ? "chip-ok" : "chip-danger"}`}
                       >
                         {d.isOnline ? "Online" : "Offline"}
                       </span>
                       {d.isUndervolted ? (
-                        <span className="chip chip-warn">Undervolt</span>
+                        <span className="chip chip-compact chip-warn">
+                          Undervolt
+                        </span>
                       ) : null}
                       {isHot(d) ? (
-                        <span className="chip chip-danger">
+                        <span className="chip chip-compact chip-danger">
                           {Math.round(d.cpuTemp!)}°C
                         </span>
                       ) : null}
                       {isDiskFull(d) ? (
-                        <span className="chip chip-warn">
+                        <span className="chip chip-compact chip-warn">
                           Disk {formatPercent(d.storageUsage, d.storageTotal)}
                         </span>
                       ) : null}
                       {d.isOnline && !d.isConnectedToVpn ? (
-                        <span className="chip chip-warn">Bez VPN</span>
+                        <span className="chip chip-compact chip-warn">
+                          Bez VPN
+                        </span>
                       ) : null}
                       {alert &&
                       !d.isUndervolted &&
                       !isHot(d) &&
                       !isDiskFull(d) ? (
-                        <span className="chip chip-warn">Alert</span>
+                        <span className="chip chip-compact chip-warn">
+                          Alert
+                        </span>
                       ) : null}
                     </div>
-                    <p className="mt-1 text-sm text-[var(--ink-soft)]">
-                      {[d.city, d.partner, d.code].filter(Boolean).join(" · ")}
-                    </p>
+                    {meta ? (
+                      <p className="truncate text-xs text-[var(--ink-soft)]">
+                        {meta}
+                      </p>
+                    ) : null}
                   </div>
-                  <div className="shrink-0 text-sm text-[var(--ink-soft)] md:text-right">
+                  <div className="hidden shrink-0 text-right text-xs text-[var(--ink-soft)] sm:block">
                     <div>{hardwareLabel(d.deviceType)}</div>
-                    <div className="font-mono text-xs">{d.uuid.slice(0, 8)}…</div>
+                    <div className="font-mono opacity-70">
+                      {d.uuid.slice(0, 8)}…
+                    </div>
                   </div>
                 </Link>
               );
