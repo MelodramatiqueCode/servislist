@@ -13,6 +13,38 @@ export type TicketNote = {
   createdAt: string;
 };
 
+export type BalenaDeviceRaw = {
+  id: number;
+  uuid: string;
+  device_name: string;
+  status: string;
+  is_online: boolean;
+  supervisor_version: string;
+  os_version: string;
+  dashboard_url: string;
+  fleet: string;
+  device_type: string;
+};
+
+export type ServiceDevice = {
+  uuid: string;
+  balenaId: number;
+  name: string;
+  code: string;
+  partner: string;
+  city: string;
+  address: string;
+  phone: string;
+  status: string;
+  isOnline: boolean;
+  supervisorVersion: string;
+  osVersion: string;
+  dashboardUrl: string;
+  fleet: string;
+  deviceType: string;
+  importedAt: string;
+};
+
 export type Ticket = {
   id: string;
   number: number;
@@ -20,6 +52,7 @@ export type Ticket = {
   description: string;
   deviceType: string;
   deviceSerial: string;
+  deviceUuid: string;
   customerName: string;
   customerPhone: string;
   assignedTo: string;
@@ -35,6 +68,7 @@ export type CreateTicketInput = {
   description: string;
   deviceType: string;
   deviceSerial: string;
+  deviceUuid?: string;
   customerName: string;
   customerPhone: string;
   assignedTo: string;
@@ -44,6 +78,11 @@ export type CreateTicketInput = {
 export type TicketStore = {
   nextNumber: number;
   tickets: Ticket[];
+};
+
+export type DeviceStore = {
+  importedAt: string;
+  devices: ServiceDevice[];
 };
 
 export const STATUS_LABELS: Record<TicketStatus, string> = {
@@ -61,6 +100,7 @@ export const PRIORITY_LABELS: Record<TicketPriority, string> = {
 };
 
 export const DEVICE_TYPES = [
+  "Raspberry Pi (Balena)",
   "Notebook",
   "PC / stolný počítač",
   "Telefón",

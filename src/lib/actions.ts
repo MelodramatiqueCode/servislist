@@ -5,9 +5,11 @@ import { redirect } from "next/navigation";
 import {
   addTicketNote,
   createTicket,
+  getDevice,
   updateTicketPriority,
   updateTicketStatus,
 } from "./store";
+import { hardwareLabel } from "./parse-device";
 import type { TicketPriority, TicketStatus } from "./types";
 
 function str(formData: FormData, key: string) {
@@ -17,15 +19,33 @@ function str(formData: FormData, key: string) {
 export async function createTicketAction(formData: FormData) {
   const title = str(formData, "title");
   const description = str(formData, "description");
-  const deviceType = str(formData, "deviceType");
-  const deviceSerial = str(formData, "deviceSerial");
-  const customerName = str(formData, "customerName");
-  const customerPhone = str(formData, "customerPhone");
+  let deviceType = str(formData, "deviceType");
+  let deviceSerial = str(formData, "deviceSerial");
+  let customerName = str(formData, "customerName");
+  let customerPhone = str(formData, "customerPhone");
   const assignedTo = str(formData, "assignedTo");
   const priority = (str(formData, "priority") || "normalna") as TicketPriority;
+  const deviceUuid = str(formData, "deviceUuid");
+
+  if (deviceUuid) {
+    const device = await getDevice(deviceUuid);
+    if (device) {
+      deviceType = deviceType || hardwareLabel(device.deviceType);
+      deviceSerial = deviceSerial || device.uuid;
+      customerName =
+        customerName ||
+        [device.code && `#${device.code}`, device.partner, device.city]
+          .filter(Boolean)
+          .join(" · ") ||
+        device.name;
+      customerPhone = customerPhone || device.phone;
+    }
+  }
 
   if (!title || !description || !deviceType || !customerName) {
-    throw new Error("Vyplň povinné polia: názov, popis, typ zariadenia a zákazník.");
+    throw new Error(
+      "Vyplň povinné polia: názov, popis, typ zariadenia a predajňa/zákazník.",
+    );
   }
 
   const ticket = await createTicket({
@@ -33,6 +53,7 @@ export async function createTicketAction(formData: FormData) {
     description,
     deviceType,
     deviceSerial,
+    deviceUuid,
     customerName,
     customerPhone,
     assignedTo,
@@ -40,6 +61,8 @@ export async function createTicketAction(formData: FormData) {
   });
 
   revalidatePath("/");
+  revalidatePath("/zariadenia");
+  if (deviceUuid) revalidatePath(`/zariadenia/${deviceUuid}`);
   redirect(`/ticket/${ticket.id}`);
 }
 

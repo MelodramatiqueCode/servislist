@@ -41,5 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 # local ticket database
-/data/*.json
+/data/tickets.json
+/data/devices.json
 !/data/.gitkeep
+!/data/balena-export.json

@@ -5,7 +5,7 @@ import {
   statusClass,
   ticketCode,
 } from "@/lib/format";
-import { getStats, listTickets } from "@/lib/store";
+import { getDeviceStats, getStats, listTickets } from "@/lib/store";
 import {
   PRIORITY_LABELS,
   STATUS_LABELS,
@@ -35,9 +35,10 @@ export default async function Home({
     (params.status as TicketStatus | "vsetky" | undefined) ?? "vsetky";
   const q = params.q ?? "";
 
-  const [tickets, stats] = await Promise.all([
+  const [tickets, stats, deviceStats] = await Promise.all([
     listTickets({ status, q }),
     getStats(),
+    getDeviceStats(),
   ]);
 
   return (
@@ -50,9 +51,17 @@ export default async function Home({
           ServisList
         </h1>
         <p className="max-w-xl text-lg text-[var(--ink-soft)]">
-          Zadávaj problémy so zariadeniami do ticketov — ako to-do list pre
-          servisákov. Stav, priorita a poznámky na jednom mieste.
+          Tickety na Balena zariadenia v predajniach — ako to-do list pre
+          servisákov.
         </p>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Link href="/novy" className="btn btn-primary">
+            + Nový problém
+          </Link>
+          <Link href="/zariadenia" className="btn btn-ghost">
+            Zariadenia ({deviceStats.total})
+          </Link>
+        </div>
       </section>
 
       <section

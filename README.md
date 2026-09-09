@@ -1,15 +1,13 @@
 # ServisList
 
-Jednoduchá webová apka na **servis zariadení** — ticketing / to-do list pre servisákov.
+Ticketing pre servis Balena zariadení v predajniach (to-do list pre servisákov).
 
 ## Čo vie
 
-- Vytvárať tickety (problémy so zariadením)
-- Filtrovať podľa stavu: otvorené, v riešení, čaká diely, hotové
-- Hľadať podľa zákazníka, sériového čísla, popisu
-- Meniť stav a prioritu
-- Pridávať poznámky zo servisu
-- Dáta sa ukladajú lokálne do `data/tickets.json`
+- Katalog Balena zariadení (predajne, online/offline, partner, telefón)
+- Vytvárať tickety naviazané na konkrétne Pi / predajňu
+- Filtrovať tickety podľa stavu a zariadenia podľa partnera / online
+- Poznámky zo servisu, priorita, link na Balena dashboard
 
 ## Spustenie
 
@@ -20,7 +18,17 @@ npm run dev
 
 Otvor [http://localhost:3000](http://localhost:3000).
 
+Zariadenia sa načítajú z `data/balena-export.json` (prvý beh). Tickety sa ukladajú do `data/tickets.json`.
+
+## Import nového Balena exportu
+
+```bash
+curl -X POST http://localhost:3000/api/import-devices \
+  -H 'Content-Type: application/json' \
+  --data-binary @data/balena-export.json
+```
+
 ## Stack
 
 - Next.js (App Router) + TypeScript + Tailwind CSS
-- Server Actions + JSON súbor (bez externej DB)
+- Server Actions + lokálne JSON súbory

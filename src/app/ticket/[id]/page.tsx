@@ -11,7 +11,7 @@ import {
   statusClass,
   ticketCode,
 } from "@/lib/format";
-import { getTicket } from "@/lib/store";
+import { getDevice, getTicket } from "@/lib/store";
 import {
   PRIORITY_LABELS,
   STATUS_LABELS,
@@ -30,6 +30,9 @@ export default async function TicketDetailPage({
   const { id } = await params;
   const ticket = await getTicket(id);
   if (!ticket) notFound();
+  const linkedDevice = ticket.deviceUuid
+    ? await getDevice(ticket.deviceUuid)
+    : null;
 
   return (
     <div className="shell max-w-4xl space-y-6">
@@ -72,15 +75,39 @@ export default async function TicketDetailPage({
           <div className="grid gap-3 sm:grid-cols-2">
             <Info label="Zariadenie" value={ticket.deviceType} />
             <Info
-              label="Sériové číslo"
+              label="Sériové číslo / UUID"
               value={ticket.deviceSerial || "—"}
             />
-            <Info label="Zákazník" value={ticket.customerName} />
+            <Info label="Predajňa / zákazník" value={ticket.customerName} />
             <Info
               label="Telefón"
               value={ticket.customerPhone || "—"}
             />
             <Info label="Servisák" value={ticket.assignedTo} />
+            {linkedDevice ? (
+              <div className="rounded-xl border border-[var(--line)] bg-white/60 px-3.5 py-3 sm:col-span-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
+                  Balena zariadenie
+                </div>
+                <div className="mt-1 font-semibold">{linkedDevice.name}</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Link
+                    href={`/zariadenia/${linkedDevice.uuid}`}
+                    className="btn btn-ghost"
+                  >
+                    Detail zariadenia
+                  </Link>
+                  <a
+                    href={linkedDevice.dashboardUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-ghost"
+                  >
+                    Balena dashboard ↗
+                  </a>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-3 border-t border-[var(--line)] pt-5">

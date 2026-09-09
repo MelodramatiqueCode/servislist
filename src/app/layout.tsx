@@ -33,9 +33,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/" className="brand">
               Servis<span>List</span>
             </Link>
-            <nav className="flex items-center gap-2">
+            <nav className="flex flex-wrap items-center justify-end gap-2">
               <Link href="/" className="btn btn-ghost">
                 Tickety
+              </Link>
+              <Link href="/zariadenia" className="btn btn-ghost">
+                Zariadenia
               </Link>
               <Link href="/novy" className="btn btn-primary">
                 + Nový problém

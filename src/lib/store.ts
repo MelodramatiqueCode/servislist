@@ -1,8 +1,12 @@
 import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
+import { normalizeBalenaDevice } from "./parse-device";
 import type {
+  BalenaDeviceRaw,
   CreateTicketInput,
+  DeviceStore,
+  ServiceDevice,
   Ticket,
   TicketNote,
   TicketPriority,
@@ -11,114 +15,179 @@ import type {
 } from "./types";
 
 const DATA_DIR = path.join(process.cwd(), "data");
-const DATA_FILE = path.join(DATA_DIR, "tickets.json");
+const TICKETS_FILE = path.join(DATA_DIR, "tickets.json");
+const DEVICES_FILE = path.join(DATA_DIR, "devices.json");
 
 function nowIso() {
   return new Date().toISOString();
 }
 
-function seedStore(): TicketStore {
+function seedTickets(): TicketStore {
   const createdAt = nowIso();
   return {
-    nextNumber: 4,
-    tickets: [
-      {
-        id: randomUUID(),
-        number: 1,
-        title: "Notebook sa nezapína",
-        description:
-          "Po stlačení power tlačidla nič nereaguje. LED kontrolka bliká raz a zhasne.",
-        deviceType: "Notebook",
-        deviceSerial: "NB-88421",
-        customerName: "Ján Kováč",
-        customerPhone: "+421 905 111 222",
-        assignedTo: "Peter",
-        status: "v_rieseni",
-        priority: "vysoka",
-        notes: [
-          {
-            id: randomUUID(),
-            text: "Skontrolovaný napájací adaptér – OK. Ďalej diagnostika základnej dosky.",
-            author: "Peter",
-            createdAt,
-          },
-        ],
-        createdAt,
-        updatedAt: createdAt,
-      },
-      {
-        id: randomUUID(),
-        number: 2,
-        title: "Tlačiareň hlási chybu papiera",
-        description:
-          "Aj keď je zásobník plný, stále hlási paper jam. Občas vytlačí jednu stranu.",
-        deviceType: "Tlačiareň",
-        deviceSerial: "HP-5520-A",
-        customerName: "Firma Nova s.r.o.",
-        customerPhone: "+421 2 5555 100",
-        assignedTo: "Lucia",
-        status: "otvorene",
-        priority: "normalna",
-        notes: [],
-        createdAt,
-        updatedAt: createdAt,
-      },
-      {
-        id: randomUUID(),
-        number: 3,
-        title: "Telefón – prasknutý displej",
-        description: "Displej je prasknutý po páde. Dotyk funguje, ale obraz je rozbitý.",
-        deviceType: "Telefón",
-        deviceSerial: "IMEI 356938035643809",
-        customerName: "Mária Horváthová",
-        customerPhone: "+421 918 333 444",
-        assignedTo: "Peter",
-        status: "caka_diely",
-        priority: "urgentna",
-        notes: [
-          {
-            id: randomUUID(),
-            text: "Objednaný originálny display. Dodanie o 2–3 dni.",
-            author: "Peter",
-            createdAt,
-          },
-        ],
-        createdAt,
-        updatedAt: createdAt,
-      },
-    ],
+    nextNumber: 1,
+    tickets: [],
   };
 }
 
-async function ensureDataFile() {
+async function ensureDir() {
   await fs.mkdir(DATA_DIR, { recursive: true });
+}
+
+async function ensureTicketsFile() {
+  await ensureDir();
   try {
-    await fs.access(DATA_FILE);
+    await fs.access(TICKETS_FILE);
   } catch {
-    await fs.writeFile(DATA_FILE, JSON.stringify(seedStore(), null, 2), "utf8");
+    await fs.writeFile(TICKETS_FILE, JSON.stringify(seedTickets(), null, 2), "utf8");
   }
 }
 
-async function readStore(): Promise<TicketStore> {
-  await ensureDataFile();
-  const raw = await fs.readFile(DATA_FILE, "utf8");
-  return JSON.parse(raw) as TicketStore;
+async function readTicketStore(): Promise<TicketStore> {
+  await ensureTicketsFile();
+  const raw = await fs.readFile(TICKETS_FILE, "utf8");
+  const store = JSON.parse(raw) as TicketStore;
+  store.tickets = store.tickets.map((t) => ({
+    ...t,
+    deviceUuid: t.deviceUuid ?? "",
+  }));
+  return store;
 }
 
-async function writeStore(store: TicketStore) {
-  await ensureDataFile();
-  await fs.writeFile(DATA_FILE, JSON.stringify(store, null, 2), "utf8");
+async function writeTicketStore(store: TicketStore) {
+  await ensureDir();
+  await fs.writeFile(TICKETS_FILE, JSON.stringify(store, null, 2), "utf8");
+}
+
+async function readDeviceStore(): Promise<DeviceStore> {
+  await ensureDir();
+  try {
+    const raw = await fs.readFile(DEVICES_FILE, "utf8");
+    return JSON.parse(raw) as DeviceStore;
+  } catch {
+    // Bootstrap from Balena export if present
+    try {
+      const exportRaw = await fs.readFile(
+        path.join(DATA_DIR, "balena-export.json"),
+        "utf8",
+      );
+      const list = JSON.parse(exportRaw) as BalenaDeviceRaw[];
+      if (Array.isArray(list) && list.length > 0) {
+        await importBalenaDevices(list);
+        const raw = await fs.readFile(DEVICES_FILE, "utf8");
+        return JSON.parse(raw) as DeviceStore;
+      }
+    } catch {
+      // no export yet
+    }
+    return { importedAt: "", devices: [] };
+  }
+}
+
+async function writeDeviceStore(store: DeviceStore) {
+  await ensureDir();
+  await fs.writeFile(DEVICES_FILE, JSON.stringify(store, null, 2), "utf8");
+}
+
+export async function importBalenaDevices(
+  rawDevices: BalenaDeviceRaw[],
+): Promise<{ count: number }> {
+  const importedAt = nowIso();
+  const byUuid = new Map<string, ServiceDevice>();
+
+  for (const raw of rawDevices) {
+    if (!raw?.uuid || !raw?.device_name) continue;
+    byUuid.set(raw.uuid, normalizeBalenaDevice(raw, importedAt));
+  }
+
+  const store: DeviceStore = {
+    importedAt,
+    devices: [...byUuid.values()].sort((a, b) => {
+      const ac = Number(a.code) || Number.MAX_SAFE_INTEGER;
+      const bc = Number(b.code) || Number.MAX_SAFE_INTEGER;
+      if (ac !== bc) return ac - bc;
+      return a.name.localeCompare(b.name, "sk");
+    }),
+  };
+
+  await writeDeviceStore(store);
+  return { count: store.devices.length };
+}
+
+export async function listDevices(filters?: {
+  q?: string;
+  online?: "all" | "online" | "offline";
+  partner?: string;
+}): Promise<ServiceDevice[]> {
+  const store = await readDeviceStore();
+  let devices = [...store.devices];
+
+  if (filters?.online === "online") {
+    devices = devices.filter((d) => d.isOnline);
+  } else if (filters?.online === "offline") {
+    devices = devices.filter((d) => !d.isOnline);
+  }
+
+  if (filters?.partner && filters.partner !== "all") {
+    devices = devices.filter(
+      (d) => d.partner.toLowerCase() === filters.partner!.toLowerCase(),
+    );
+  }
+
+  if (filters?.q?.trim()) {
+    const q = filters.q.trim().toLowerCase();
+    devices = devices.filter((d) => {
+      const hay = [
+        d.name,
+        d.code,
+        d.partner,
+        d.city,
+        d.address,
+        d.phone,
+        d.uuid,
+        d.fleet,
+        d.deviceType,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  return devices;
+}
+
+export async function getDevice(uuid: string): Promise<ServiceDevice | null> {
+  const store = await readDeviceStore();
+  return store.devices.find((d) => d.uuid === uuid) ?? null;
+}
+
+export async function getDeviceStats() {
+  const devices = await listDevices();
+  const partners = new Set(devices.map((d) => d.partner).filter(Boolean));
+  return {
+    total: devices.length,
+    online: devices.filter((d) => d.isOnline).length,
+    offline: devices.filter((d) => !d.isOnline).length,
+    partners: [...partners].sort((a, b) => a.localeCompare(b, "sk")),
+    importedAt: (await readDeviceStore()).importedAt,
+  };
 }
 
 export async function listTickets(filters?: {
   status?: TicketStatus | "vsetky";
   q?: string;
+  deviceUuid?: string;
 }): Promise<Ticket[]> {
-  const store = await readStore();
+  const store = await readTicketStore();
   let tickets = [...store.tickets];
 
   if (filters?.status && filters.status !== "vsetky") {
     tickets = tickets.filter((t) => t.status === filters.status);
+  }
+
+  if (filters?.deviceUuid) {
+    tickets = tickets.filter((t) => t.deviceUuid === filters.deviceUuid);
   }
 
   if (filters?.q?.trim()) {
@@ -129,6 +198,7 @@ export async function listTickets(filters?: {
         t.description,
         t.deviceType,
         t.deviceSerial,
+        t.deviceUuid,
         t.customerName,
         t.customerPhone,
         t.assignedTo,
@@ -146,12 +216,12 @@ export async function listTickets(filters?: {
 }
 
 export async function getTicket(id: string): Promise<Ticket | null> {
-  const store = await readStore();
+  const store = await readTicketStore();
   return store.tickets.find((t) => t.id === id) ?? null;
 }
 
 export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
-  const store = await readStore();
+  const store = await readTicketStore();
   const timestamp = nowIso();
   const ticket: Ticket = {
     id: randomUUID(),
@@ -160,6 +230,7 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
     description: input.description.trim(),
     deviceType: input.deviceType.trim(),
     deviceSerial: input.deviceSerial.trim(),
+    deviceUuid: input.deviceUuid?.trim() || "",
     customerName: input.customerName.trim(),
     customerPhone: input.customerPhone.trim(),
     assignedTo: input.assignedTo.trim() || "Nepriradené",
@@ -172,7 +243,7 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
 
   store.nextNumber += 1;
   store.tickets.unshift(ticket);
-  await writeStore(store);
+  await writeTicketStore(store);
   return ticket;
 }
 
@@ -180,12 +251,12 @@ export async function updateTicketStatus(
   id: string,
   status: TicketStatus,
 ): Promise<Ticket | null> {
-  const store = await readStore();
+  const store = await readTicketStore();
   const ticket = store.tickets.find((t) => t.id === id);
   if (!ticket) return null;
   ticket.status = status;
   ticket.updatedAt = nowIso();
-  await writeStore(store);
+  await writeTicketStore(store);
   return ticket;
 }
 
@@ -193,12 +264,12 @@ export async function updateTicketPriority(
   id: string,
   priority: TicketPriority,
 ): Promise<Ticket | null> {
-  const store = await readStore();
+  const store = await readTicketStore();
   const ticket = store.tickets.find((t) => t.id === id);
   if (!ticket) return null;
   ticket.priority = priority;
   ticket.updatedAt = nowIso();
-  await writeStore(store);
+  await writeTicketStore(store);
   return ticket;
 }
 
@@ -207,7 +278,7 @@ export async function addTicketNote(
   text: string,
   author: string,
 ): Promise<Ticket | null> {
-  const store = await readStore();
+  const store = await readTicketStore();
   const ticket = store.tickets.find((t) => t.id === id);
   if (!ticket) return null;
 
@@ -220,7 +291,7 @@ export async function addTicketNote(
 
   ticket.notes.push(note);
   ticket.updatedAt = note.createdAt;
-  await writeStore(store);
+  await writeTicketStore(store);
   return ticket;
 }
 
