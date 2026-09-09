@@ -176,14 +176,60 @@ export function storageLabel(device: ServiceDevice) {
   return `${formatBytesMb(device.storageUsage)} / ${formatBytesMb(device.storageTotal)} (${formatPercent(device.storageUsage, device.storageTotal)})`;
 }
 
+export function isHot(device: ServiceDevice) {
+  return device.cpuTemp != null && device.cpuTemp >= 80;
+}
+
+export function isDiskFull(device: ServiceDevice) {
+  return (
+    device.storageUsage != null &&
+    device.storageTotal != null &&
+    device.storageTotal > 0 &&
+    device.storageUsage / device.storageTotal >= 0.9
+  );
+}
+
 export function hasHealthAlert(device: ServiceDevice) {
   return (
     !device.isOnline ||
     device.isUndervolted ||
-    (device.cpuTemp != null && device.cpuTemp >= 80) ||
-    (device.storageUsage != null &&
-      device.storageTotal != null &&
-      device.storageTotal > 0 &&
-      device.storageUsage / device.storageTotal >= 0.9)
+    isHot(device) ||
+    isDiskFull(device)
   );
+}
+
+export type DeviceHealthFilter =
+  | "all"
+  | "online"
+  | "offline"
+  | "undervolt"
+  | "hot"
+  | "disk"
+  | "alerts"
+  | "vpn_down";
+
+export function matchesHealthFilter(
+  device: ServiceDevice,
+  filter: DeviceHealthFilter,
+) {
+  switch (filter) {
+    case "all":
+      return true;
+    case "online":
+      return device.isOnline;
+    case "offline":
+      return !device.isOnline;
+    case "undervolt":
+      return device.isUndervolted;
+    case "hot":
+      return isHot(device);
+    case "disk":
+      return isDiskFull(device);
+    case "alerts":
+      return hasHealthAlert(device);
+    case "vpn_down":
+      return device.isOnline && !device.isConnectedToVpn;
+    default:
+      return true;
+  }
 }

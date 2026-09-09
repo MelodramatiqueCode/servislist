@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { ImportDevicesPanel, SyncBalenaButton } from "@/components/device-ui";
 import { getBalenaConfig } from "@/lib/balena";
-import { hardwareLabel, hasHealthAlert } from "@/lib/parse-device";
+import {
+  formatPercent,
+  hardwareLabel,
+  hasHealthAlert,
+  isDiskFull,
+  isHot,
+  type DeviceHealthFilter,
+} from "@/lib/parse-device";
 import {
   ensureFreshBalenaSync,
   getDeviceStats,
@@ -10,9 +17,36 @@ import {
 
 type SearchParams = Promise<{
   q?: string;
+  health?: string;
   online?: string;
   partner?: string;
 }>;
+
+const HEALTH_OPTIONS: { id: DeviceHealthFilter; label: string }[] = [
+  { id: "all", label: "Všetky" },
+  { id: "online", label: "Online" },
+  { id: "offline", label: "Offline" },
+  { id: "undervolt", label: "Undervolt" },
+  { id: "hot", label: "Horúce" },
+  { id: "disk", label: "Disk plný" },
+  { id: "vpn_down", label: "Bez VPN" },
+  { id: "alerts", label: "Všetky alerty" },
+];
+
+function parseHealth(params: {
+  health?: string;
+  online?: string;
+}): DeviceHealthFilter {
+  const allowed = new Set(HEALTH_OPTIONS.map((o) => o.id));
+  if (params.health && allowed.has(params.health as DeviceHealthFilter)) {
+    return params.health as DeviceHealthFilter;
+  }
+  // spätná kompatibilita so starým ?online=
+  if (params.online === "online" || params.online === "offline") {
+    return params.online;
+  }
+  return "all";
+}
 
 export default async function DevicesPage({
   searchParams,
@@ -21,31 +55,42 @@ export default async function DevicesPage({
 }) {
   const params = await searchParams;
   const q = params.q ?? "";
-  const online =
-    params.online === "online" || params.online === "offline"
-      ? params.online
-      : "all";
+  const health = parseHealth(params);
   const partner = params.partner ?? "all";
 
   await ensureFreshBalenaSync();
 
   const [devices, stats] = await Promise.all([
-    listDevices({ q, online, partner }),
+    listDevices({ q, health, partner }),
     getDeviceStats(),
   ]);
 
   const fleetSlug = getBalenaConfig()?.fleetSlug || "ceo2/massiva";
 
+  const healthCount = (id: DeviceHealthFilter) => {
+    if (id === "all") return stats.total;
+    if (id === "online") return stats.online;
+    if (id === "offline") return stats.offline;
+    if (id === "undervolt") return stats.undervolt;
+    if (id === "hot") return stats.hot;
+    if (id === "disk") return stats.disk;
+    if (id === "vpn_down") return stats.vpnDown;
+    if (id === "alerts") return stats.alerts;
+    return 0;
+  };
+
   const qs = (next: Record<string, string>) => {
     const sp = new URLSearchParams();
     const merged = {
       q,
-      online,
+      health,
       partner,
       ...next,
     };
     if (merged.q) sp.set("q", merged.q);
-    if (merged.online && merged.online !== "all") sp.set("online", merged.online);
+    if (merged.health && merged.health !== "all") {
+      sp.set("health", merged.health);
+    }
     if (merged.partner && merged.partner !== "all") {
       sp.set("partner", merged.partner);
     }
@@ -61,7 +106,7 @@ export default async function DevicesPage({
         </p>
         <h1 className="text-4xl font-extrabold md:text-5xl">Zariadenia</h1>
         <p className="max-w-2xl text-lg text-[var(--ink-soft)]">
-          Predajne a Raspberry Pi z flotily. Live online stav z Balena Cloud.
+          Predajne a Raspberry Pi z flotily. Live online stav a health filtre.
         </p>
       </section>
 
@@ -73,7 +118,7 @@ export default async function DevicesPage({
       />
 
       <section
-        className="fade-up grid grid-cols-2 gap-3 md:grid-cols-4"
+        className="fade-up grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
         style={{ animationDelay: "40ms" }}
       >
         <div className="stat">
@@ -89,8 +134,22 @@ export default async function DevicesPage({
           <strong>{stats.offline}</strong>
         </div>
         <div className="stat">
-          <span className="text-sm text-[var(--ink-soft)]">Partneri</span>
-          <strong>{stats.partners.length}</strong>
+          <span className="text-sm text-[var(--ink-soft)]">Undervolt</span>
+          <strong className={stats.undervolt > 0 ? "text-[var(--warn)]" : ""}>
+            {stats.undervolt}
+          </strong>
+        </div>
+        <div className="stat">
+          <span className="text-sm text-[var(--ink-soft)]">Horúce</span>
+          <strong className={stats.hot > 0 ? "text-[var(--danger)]" : ""}>
+            {stats.hot}
+          </strong>
+        </div>
+        <div className="stat">
+          <span className="text-sm text-[var(--ink-soft)]">Alerty</span>
+          <strong className={stats.alerts > 0 ? "text-[var(--danger)]" : ""}>
+            {stats.alerts}
+          </strong>
         </div>
       </section>
 
@@ -100,7 +159,7 @@ export default async function DevicesPage({
       >
         <div className="flex flex-col gap-4 border-b border-[var(--line)] p-4 md:p-5">
           <form className="flex w-full flex-col gap-3 md:flex-row">
-            <input type="hidden" name="online" value={online} />
+            <input type="hidden" name="health" value={health ?? "all"} />
             <input type="hidden" name="partner" value={partner} />
             <div className="field grow">
               <label htmlFor="q" className="sr-only">
@@ -118,102 +177,112 @@ export default async function DevicesPage({
             </button>
           </form>
 
-          <div className="flex flex-wrap gap-2">
-            {[
-              { key: "all", label: "Všetky" },
-              { key: "online", label: "Online" },
-              { key: "offline", label: "Offline" },
-            ].map((f) => (
-              <Link
-                key={f.key}
-                href={qs({ online: f.key })}
-                className="filter-pill"
-                data-active={online === f.key}
-              >
-                {f.label}
-              </Link>
-            ))}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
+              Stav / health
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {HEALTH_OPTIONS.map((opt) => {
+                const count = healthCount(opt.id);
+                const active = health === opt.id;
+                return (
+                  <Link
+                    key={String(opt.id)}
+                    href={qs({ health: opt.id ?? "all" })}
+                    className={`chip ${active ? "chip-active" : ""}`}
+                  >
+                    {opt.label}
+                    <span className="opacity-70">({count})</span>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
 
-          {stats.partners.length > 0 ? (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
+              Partner
+            </p>
             <div className="flex flex-wrap gap-2">
               <Link
                 href={qs({ partner: "all" })}
-                className="filter-pill"
-                data-active={partner === "all"}
+                className={`chip ${partner === "all" ? "chip-active" : ""}`}
               >
-                Všetci partneri
+                Všetci
               </Link>
               {stats.partners.map((p) => (
                 <Link
                   key={p}
                   href={qs({ partner: p })}
-                  className="filter-pill"
-                  data-active={partner === p}
+                  className={`chip ${partner === p ? "chip-active" : ""}`}
                 >
                   {p}
                 </Link>
               ))}
             </div>
-          ) : null}
+          </div>
         </div>
 
-        {devices.length === 0 ? (
-          <div className="space-y-3 p-8 text-center">
-            <p className="text-lg font-semibold">Zatiaľ žiadne zariadenia</p>
-            <p className="text-[var(--ink-soft)]">
-              Nastav Balena token a stlač sync, alebo importuj JSON export.
-            </p>
-          </div>
-        ) : (
-          <ul>
-            {devices.map((d) => (
-              <li key={d.uuid}>
-                <Link href={`/zariadenia/${d.uuid}`} className="ticket-row">
-                  <div className="min-w-[4.5rem]">
-                    <div className="font-display text-sm font-bold text-[var(--teal-deep)]">
-                      {d.code ? `#${d.code}` : "—"}
+        <div className="divide-y divide-[var(--line)]">
+          {devices.length === 0 ? (
+            <div className="space-y-4 p-8 text-center text-[var(--ink-soft)]">
+              <p>Žiadne zariadenia podľa filtra.</p>
+              <ImportDevicesPanel />
+            </div>
+          ) : (
+            devices.map((d) => {
+              const alert = hasHealthAlert(d);
+              return (
+                <Link
+                  key={d.uuid}
+                  href={`/zariadenia/${d.uuid}`}
+                  className="flex flex-col gap-2 px-4 py-4 transition hover:bg-[var(--sand)] md:flex-row md:items-center md:justify-between md:px-5"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong className="text-lg">{d.name}</strong>
+                      <span
+                        className={`chip ${d.isOnline ? "chip-ok" : "chip-danger"}`}
+                      >
+                        {d.isOnline ? "Online" : "Offline"}
+                      </span>
+                      {d.isUndervolted ? (
+                        <span className="chip chip-warn">Undervolt</span>
+                      ) : null}
+                      {isHot(d) ? (
+                        <span className="chip chip-danger">
+                          {Math.round(d.cpuTemp!)}°C
+                        </span>
+                      ) : null}
+                      {isDiskFull(d) ? (
+                        <span className="chip chip-warn">
+                          Disk {formatPercent(d.storageUsage, d.storageTotal)}
+                        </span>
+                      ) : null}
+                      {d.isOnline && !d.isConnectedToVpn ? (
+                        <span className="chip chip-warn">Bez VPN</span>
+                      ) : null}
+                      {alert &&
+                      !d.isUndervolted &&
+                      !isHot(d) &&
+                      !isDiskFull(d) ? (
+                        <span className="chip chip-warn">Alert</span>
+                      ) : null}
                     </div>
-                    <div className="mt-1 text-xs text-[var(--ink-soft)]">
-                      {d.partner || "—"}
-                    </div>
+                    <p className="mt-1 text-sm text-[var(--ink-soft)]">
+                      {[d.city, d.partner, d.code].filter(Boolean).join(" · ")}
+                    </p>
                   </div>
-                  <div className="min-w-0 space-y-1">
-                    <div className="truncate text-lg font-bold">
-                      {d.city || d.name}
-                    </div>
-                    <div className="truncate text-sm text-[var(--ink-soft)]">
-                      {d.address || d.name}
-                      {d.phone ? ` · ${d.phone}` : ""}
-                    </div>
-                    <div className="text-xs text-[var(--ink-soft)]">
-                      {hardwareLabel(d.deviceType)} · {d.status}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 md:justify-end">
-                    <span
-                      className={`chip ${d.isOnline ? "status-v-rieseni" : "status-hotove"}`}
-                    >
-                      {d.isOnline ? "Online" : "Offline"}
-                    </span>
-                    {d.isUndervolted ? (
-                      <span className="chip prio-urgentna">Undervolt</span>
-                    ) : null}
-                    {d.cpuTemp != null && d.cpuTemp >= 80 ? (
-                      <span className="chip prio-vysoka">{Math.round(d.cpuTemp)}°C</span>
-                    ) : null}
-                    {hasHealthAlert(d) && d.isOnline && !d.isUndervolted ? (
-                      <span className="chip prio-vysoka">Alert</span>
-                    ) : null}
+                  <div className="shrink-0 text-sm text-[var(--ink-soft)] md:text-right">
+                    <div>{hardwareLabel(d.deviceType)}</div>
+                    <div className="font-mono text-xs">{d.uuid.slice(0, 8)}…</div>
                   </div>
                 </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+              );
+            })
+          )}
+        </div>
       </section>
-
-      {stats.total === 0 ? <ImportDevicesPanel /> : null}
     </div>
   );
 }

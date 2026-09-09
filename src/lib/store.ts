@@ -6,7 +6,7 @@ import {
   getBalenaConfig,
   isBalenaConfigured,
 } from "./balena";
-import { normalizeBalenaDevice } from "./parse-device";
+import { normalizeBalenaDevice, matchesHealthFilter, isDiskFull, isHot } from "./parse-device";
 import type {
   BalenaDeviceRaw,
   CreateTicketInput,
@@ -18,6 +18,7 @@ import type {
   TicketStatus,
   TicketStore,
 } from "./types";
+import type { DeviceHealthFilter } from "./parse-device";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const TICKETS_FILE = path.join(DATA_DIR, "tickets.json");
@@ -316,15 +317,17 @@ export async function getSyncMeta() {
 export async function listDevices(filters?: {
   q?: string;
   online?: "all" | "online" | "offline";
+  health?: DeviceHealthFilter;
   partner?: string;
 }): Promise<ServiceDevice[]> {
   const store = await readDeviceStore();
   let devices = [...store.devices];
 
-  if (filters?.online === "online") {
-    devices = devices.filter((d) => d.isOnline);
-  } else if (filters?.online === "offline") {
-    devices = devices.filter((d) => !d.isOnline);
+  const health = filters?.health || filters?.online || "all";
+  if (health && health !== "all") {
+    devices = devices.filter((d) =>
+      matchesHealthFilter(d, health as DeviceHealthFilter),
+    );
   }
 
   if (filters?.partner && filters.partner !== "all") {
@@ -365,10 +368,18 @@ export async function getDeviceStats() {
   const devices = await listDevices();
   const partners = new Set(devices.map((d) => d.partner).filter(Boolean));
   const store = await readDeviceStore();
+  const all = store.devices;
   return {
-    total: devices.length,
-    online: devices.filter((d) => d.isOnline).length,
-    offline: devices.filter((d) => !d.isOnline).length,
+    total: all.length,
+    online: all.filter((d) => d.isOnline).length,
+    offline: all.filter((d) => !d.isOnline).length,
+    undervolt: all.filter((d) => d.isUndervolted).length,
+    hot: all.filter((d) => isHot(d)).length,
+    disk: all.filter((d) => isDiskFull(d)).length,
+    alerts: all.filter((d) =>
+      matchesHealthFilter(d, "alerts"),
+    ).length,
+    vpnDown: all.filter((d) => matchesHealthFilter(d, "vpn_down")).length,
     partners: [...partners].sort((a, b) => a.localeCompare(b, "sk")),
     importedAt: store.importedAt,
     syncedAt: store.syncedAt || "",
