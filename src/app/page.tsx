@@ -68,16 +68,9 @@ export default async function Home({
   return (
     <div className="shell space-y-6">
       <section className="fade-up space-y-3">
-        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--teal)]">
-          Servisná dielňa
-        </p>
         <h1 className="max-w-2xl text-4xl font-extrabold leading-tight text-[var(--ink)] md:text-5xl">
           ServisList
         </h1>
-        <p className="max-w-xl text-lg text-[var(--ink-soft)]">
-          Tickety na Balena zariadenia v predajniach — ako to-do list pre
-          servisákov.
-        </p>
         <div className="flex flex-wrap gap-2 pt-1">
           <Link href="/novy" className="btn btn-primary">
             + Nový problém
