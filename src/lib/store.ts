@@ -227,12 +227,24 @@ export type SyncResult = {
   offline: number;
   added: number;
   updated: number;
+  removed: number;
   alertsCreated: number;
   alertsResolved: number;
   syncedAt: string;
   error?: string;
   configured: boolean;
 };
+
+const EMPTY_SYNC_COUNTS = {
+  count: 0,
+  online: 0,
+  offline: 0,
+  added: 0,
+  updated: 0,
+  removed: 0,
+  alertsCreated: 0,
+  alertsResolved: 0,
+} as const;
 
 const OPEN_STATUSES: TicketStatus[] = ["otvorene", "v_rieseni", "caka_diely"];
 
@@ -371,6 +383,29 @@ export async function reconcileDeviceAlerts(
     }
   }
 
+  const currentUuids = new Set(current.map((d) => d.uuid));
+  for (const device of previous) {
+    if (currentUuids.has(device.uuid)) continue;
+    const open = findOpenAutoTicket(store, device.uuid);
+    if (!open) continue;
+    const label =
+      [device.code && `#${device.code}`, device.partner, device.city]
+        .filter(Boolean)
+        .join(" · ") || device.name;
+    open.notes.push(
+      autoNote(
+        `Zariadenie ${label} už nie je vo fleete Balena — vyradené z katalógu.`,
+        timestamp,
+      ),
+    );
+    open.updatedAt = timestamp;
+    if (autoClose) {
+      open.status = "hotove";
+    }
+    resolved += 1;
+    dirty = true;
+  }
+
   if (dirty) {
     await writeTicketStore(store);
   }
@@ -386,13 +421,7 @@ export async function syncFromBalenaCloud(options?: {
     return {
       ok: false,
       configured: false,
-      count: 0,
-      online: 0,
-      offline: 0,
-      added: 0,
-      updated: 0,
-      alertsCreated: 0,
-      alertsResolved: 0,
+      ...EMPTY_SYNC_COUNTS,
       syncedAt: "",
       error:
         "Balena nie je nastavená. Pridaj BALENA_API_TOKEN do .env.local.",
@@ -412,6 +441,7 @@ export async function syncFromBalenaCloud(options?: {
         offline: existing.devices.length - online,
         added: 0,
         updated: 0,
+        removed: 0,
         alertsCreated: 0,
         alertsResolved: 0,
         syncedAt: existing.syncedAt,
@@ -425,6 +455,7 @@ export async function syncFromBalenaCloud(options?: {
     const byUuid = new Map(existing.devices.map((d) => [d.uuid, d]));
     let added = 0;
     let updated = 0;
+    let removed = 0;
 
     for (const raw of remote) {
       const normalized = normalizeBalenaDevice(raw, syncedAt);
@@ -461,6 +492,18 @@ export async function syncFromBalenaCloud(options?: {
       byUuid.set(raw.uuid, next);
     }
 
+    // Drop devices Balena no longer returns. Skip prune on an empty remote
+    // list when we already have a catalog — that is more often a bad
+    // response than a genuinely empty fleet.
+    const remoteUuids = new Set(remote.map((row) => row.uuid));
+    if (remote.length > 0 || existing.devices.length === 0) {
+      for (const uuid of [...byUuid.keys()]) {
+        if (remoteUuids.has(uuid)) continue;
+        byUuid.delete(uuid);
+        removed += 1;
+      }
+    }
+
     const devices = sortDevices([...byUuid.values()]);
     const alerts = await reconcileDeviceAlerts(existing.devices, devices);
 
@@ -481,6 +524,7 @@ export async function syncFromBalenaCloud(options?: {
       offline: devices.length - online,
       added,
       updated,
+      removed,
       alertsCreated: alerts.created,
       alertsResolved: alerts.resolved,
       syncedAt,
@@ -499,6 +543,7 @@ export async function syncFromBalenaCloud(options?: {
       offline: store.devices.filter((d) => !d.isOnline).length,
       added: 0,
       updated: 0,
+      removed: 0,
       alertsCreated: 0,
       alertsResolved: 0,
       syncedAt: store.syncedAt || "",

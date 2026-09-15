@@ -126,6 +126,7 @@ export function SyncBalenaButton({
         `Synchronizované: ${json.count} · online ${json.online} · offline ${json.offline}` +
           (json.updated ? ` · zmeny ${json.updated}` : "") +
           (json.added ? ` · nové ${json.added}` : "") +
+          (json.removed ? ` · mimo flotily ${json.removed}` : "") +
           (json.alertsCreated
             ? ` · nové alerty ${json.alertsCreated}`
             : "") +
@@ -148,7 +149,8 @@ export function SyncBalenaButton({
           </p>
           <p className="mt-1 text-xs text-[var(--ink-soft)]">
             Auto-tickety pri novom alerte (offline, undervolt, horúce, disk,
-            VPN). Pri zotavení poznámka a zatvorenie ticketu.
+            VPN). Pri zotavení poznámka a zatvorenie ticketu. Zariadenia, ktoré
+            vo fleete už nie sú, sa z katalógu vyradia.
           </p>
           {!configured ? (
             <p className="mt-1 text-sm font-semibold text-[var(--amber)]">
