@@ -6,6 +6,7 @@ import { MapsNavLink } from "@/components/maps-nav-link";
 import {
   updateVyjazdAction,
   updateVyjazdStatusAction,
+  recalcVyjazdRouteAction,
 } from "@/lib/actions";
 import {
   formatDate,
@@ -27,6 +28,11 @@ import {
   type TicketPriority,
   type VyjazdStatus,
 } from "@/lib/types";
+import {
+  liveRouteError,
+  liveRouteLabel,
+  mappedRouteStopCount,
+} from "@/lib/route-estimate";
 import {
   allStopsDone,
   canMergeVyjazdStatus,
@@ -56,10 +62,10 @@ export default async function VyjazdEditorPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string; merged?: string }>;
+  searchParams: Promise<{ saved?: string; merged?: string; routed?: string }>;
 }) {
   const { id } = await params;
-  const { saved, merged } = await searchParams;
+  const { saved, merged, routed } = await searchParams;
   const vyjazd = await getVyjazd(id);
   if (!vyjazd) notFound();
 
@@ -95,6 +101,9 @@ export default async function VyjazdEditorPage({
   const routeUrl = routeNavigationUrl(vyjazd.stops);
   const singleNavUrl =
     routeUrl ?? stopNavigationUrl(vyjazd.stops[0] ?? {});
+  const routeLabel = liveRouteLabel(vyjazd);
+  const routeError = liveRouteError(vyjazd);
+  const canEstimateRoute = mappedRouteStopCount(vyjazd.stops) >= 2;
 
   return (
     <div className="shell max-w-4xl space-y-6">
@@ -133,6 +142,34 @@ export default async function VyjazdEditorPage({
             </a>
           ) : null}
         </div>
+        {canEstimateRoute ? (
+          <div className="flex flex-wrap items-center gap-3">
+            {routeLabel ? (
+              <p className="text-base font-semibold text-[var(--ink)]">
+                {routeLabel}
+              </p>
+            ) : routeError ? (
+              <p className="text-sm text-[var(--danger)]">{routeError}</p>
+            ) : (
+              <p className="text-sm text-[var(--ink-soft)]">
+                Odhad km / času sa spočíta po uložení alebo prepočte trasy.
+              </p>
+            )}
+            <form action={recalcVyjazdRouteAction}>
+              <input type="hidden" name="id" value={vyjazd.id} />
+              <button type="submit" className="btn btn-ghost">
+                Prepočítať trasu
+              </button>
+            </form>
+            <p className="text-xs text-[var(--ink-soft)]">
+              Približne, podľa OpenStreetMap (Nominatim + OSRM).
+            </p>
+          </div>
+        ) : vyjazd.stops.length > 1 ? (
+          <p className="text-sm text-[var(--ink-soft)]">
+            Doplň aspoň dve adresy, aby sa dala spočítať vzdialenosť a čas.
+          </p>
+        ) : null}
         <h1 className="text-3xl font-extrabold leading-tight md:text-4xl">
           {vyjazd.title}
         </h1>
@@ -147,6 +184,13 @@ export default async function VyjazdEditorPage({
         {saved ? <p className="chip chip-ok">Zmeny uložené ✓</p> : null}
         {merged ? (
           <p className="chip chip-ok">Výjazdy spojené ✓ Druhý ostal zrušený.</p>
+        ) : null}
+        {routed ? (
+          <p className="chip chip-ok">
+            {routeLabel
+              ? `Trasa prepočítaná ✓ ${routeLabel.replace(/^Trasa\s+/, "")}`
+              : routeError || "Trasa prepočítaná."}
+          </p>
         ) : null}
         {complete && vyjazd.status !== "hotovy" && vyjazd.status !== "zruseny" ? (
           <p className="chip chip-ok">

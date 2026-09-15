@@ -14,6 +14,7 @@ import {
   VYJAZD_STATUS_LABELS,
   type VyjazdStatus,
 } from "@/lib/types";
+import { liveRouteLabel } from "@/lib/route-estimate";
 import {
   canMergeVyjazdStatus,
   doneStopCount,
@@ -202,6 +203,7 @@ export default async function VyjazdyPage({
             {vyjazdy.map((v) => {
               const routeUrl = routeNavigationUrl(v.stops);
               const navUrl = routeUrl ?? stopNavigationUrl(v.stops[0] ?? {});
+              const routeLabel = liveRouteLabel(v);
               return (
               <li key={v.id}>
                 <div className="ticket-row">
@@ -221,6 +223,7 @@ export default async function VyjazdyPage({
                       {v.stops.length > 1 ? (
                         <span>{prevadzkyCountLabel(v.stops.length)}</span>
                       ) : null}
+                      {routeLabel ? <span>{routeLabel}</span> : null}
                       {v.stops.length > 0 &&
                       (v.status === "naplanovany" || v.status === "prebieha") ? (
                         <span>

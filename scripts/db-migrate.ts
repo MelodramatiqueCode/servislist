@@ -10,7 +10,7 @@ async function main() {
 
   await ensureSchema();
   console.log(
-    "Schema OK — tabuľky tickets + vyjazdy (vrátane stops) + app_meta sú pripravené.",
+    "Schema OK — tabuľky tickets + vyjazdy (vrátane stops a route) + app_meta sú pripravené.",
   );
 }
 

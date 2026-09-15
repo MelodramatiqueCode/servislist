@@ -108,6 +108,10 @@ export async function ensureSchema() {
         ADD COLUMN IF NOT EXISTS stops JSONB NOT NULL DEFAULT '[]'::jsonb
       `;
       await sql`
+        ALTER TABLE vyjazdy
+        ADD COLUMN IF NOT EXISTS route JSONB
+      `;
+      await sql`
         CREATE INDEX IF NOT EXISTS vyjazdy_status_idx ON vyjazdy (status)
       `;
       await sql`
@@ -272,6 +276,7 @@ function rowToVyjazd(row: Record<string, unknown>): Vyjazd {
     description: String(row.description ?? ""),
     result: String(row.result ?? ""),
     stops: row.stops as Vyjazd["stops"],
+    route: row.route as Vyjazd["route"],
     createdAt:
       row.created_at instanceof Date
         ? row.created_at.toISOString()
@@ -318,7 +323,7 @@ export async function dbWriteVyjazdStore(store: VyjazdStore) {
       INSERT INTO vyjazdy (
         id, number, title, store, address, contact_phone, technician,
         scheduled_at, status, priority, device_uuid, ticket_id,
-        description, result, stops, created_at, updated_at
+        description, result, stops, route, created_at, updated_at
       ) VALUES (
         ${v.id},
         ${v.number},
@@ -335,6 +340,7 @@ export async function dbWriteVyjazdStore(store: VyjazdStore) {
         ${v.description},
         ${v.result},
         ${JSON.stringify(v.stops ?? [])}::jsonb,
+        ${JSON.stringify(v.route ?? null)}::jsonb,
         ${v.createdAt}::timestamptz,
         ${v.updatedAt}::timestamptz
       )
@@ -353,6 +359,7 @@ export async function dbWriteVyjazdStore(store: VyjazdStore) {
         description = EXCLUDED.description,
         result = EXCLUDED.result,
         stops = EXCLUDED.stops,
+        route = EXCLUDED.route,
         updated_at = EXCLUDED.updated_at
     `;
   }

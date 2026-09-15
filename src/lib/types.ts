@@ -143,6 +143,17 @@ export type VyjazdStop = {
   note: string;
 };
 
+export type VyjazdRouteStatus = "ok" | "incomplete" | "error";
+
+export type VyjazdRouteSummary = {
+  status: VyjazdRouteStatus;
+  distanceMeters: number;
+  durationSeconds: number;
+  computedAt: string;
+  fingerprint: string;
+  error: string;
+};
+
 export type VyjazdStopInput = {
   id?: string;
   store: string;
@@ -170,6 +181,7 @@ export type Vyjazd = {
   description: string;
   result: string;
   stops: VyjazdStop[];
+  route: VyjazdRouteSummary | null;
   createdAt: string;
   updatedAt: string;
 };

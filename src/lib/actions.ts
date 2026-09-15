@@ -9,6 +9,7 @@ import {
   deleteVyjazd,
   getDevice,
   mergeVyjazdy,
+  refreshVyjazdRoute,
   setVyjazdStopDone,
   updateTicketPriority,
   updateTicketStatus,
@@ -226,6 +227,16 @@ export async function updateVyjazdAction(formData: FormData) {
   revalidatePath("/vyjazdy");
   revalidatePath(`/vyjazdy/${id}`);
   redirect(`/vyjazdy/${id}?saved=1`);
+}
+
+export async function recalcVyjazdRouteAction(formData: FormData) {
+  const id = str(formData, "id");
+  if (!id) return;
+
+  await refreshVyjazdRoute(id);
+  revalidatePath("/vyjazdy");
+  revalidatePath(`/vyjazdy/${id}`);
+  redirect(`/vyjazdy/${id}?routed=1`);
 }
 
 export async function updateVyjazdStatusAction(formData: FormData) {

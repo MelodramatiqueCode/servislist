@@ -55,6 +55,7 @@ import {
   syncLegacyVyjazdFields,
   vyjazdCoversDevice,
 } from "./vyjazd-stops";
+import { estimateDrivingRoute, routeFingerprint } from "./route-estimate";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const TICKETS_FILE = path.join(DATA_DIR, "tickets.json");
@@ -867,9 +868,11 @@ export async function createVyjazd(input: CreateVyjazdInput): Promise<Vyjazd> {
     description: (input.description ?? "").trim(),
     result: (input.result ?? "").trim(),
     stops,
+    route: null,
     createdAt: timestamp,
     updatedAt: timestamp,
   });
+  vyjazd.route = await estimateDrivingRoute(vyjazd.stops);
 
   store.nextNumber += 1;
   store.vyjazdy.unshift(vyjazd);
@@ -880,11 +883,12 @@ export async function createVyjazd(input: CreateVyjazdInput): Promise<Vyjazd> {
 export async function updateVyjazd(
   id: string,
   patch: UpdateVyjazdInput,
-  opts?: { syncStatusFromStops?: boolean },
+  opts?: { syncStatusFromStops?: boolean; forceRoute?: boolean },
 ): Promise<Vyjazd | null> {
   const store = await readVyjazdStore();
   const vyjazd = store.vyjazdy.find((v) => v.id === id);
   if (!vyjazd) return null;
+  const previousFingerprint = vyjazd.route?.fingerprint ?? "";
 
   const fields: (keyof UpdateVyjazdInput)[] = [
     "title",
@@ -926,6 +930,10 @@ export async function updateVyjazd(
   }
 
   syncLegacyVyjazdFields(vyjazd);
+  const nextFingerprint = routeFingerprint(vyjazd.stops);
+  if (opts?.forceRoute || nextFingerprint !== previousFingerprint) {
+    vyjazd.route = await estimateDrivingRoute(vyjazd.stops);
+  }
   vyjazd.updatedAt = nowIso();
   await writeVyjazdStore(store);
   return vyjazd;
@@ -977,6 +985,7 @@ export async function mergeVyjazdy(
   }
 
   const pair = buildMergedVyjazdPair(primary, secondary, nowIso());
+  pair.primary.route = await estimateDrivingRoute(pair.primary.stops);
   store.vyjazdy = store.vyjazdy.map((v) => {
     if (v.id === primaryId) return pair.primary;
     if (v.id === secondaryId) return pair.secondary;
@@ -984,6 +993,10 @@ export async function mergeVyjazdy(
   });
   await writeVyjazdStore(store);
   return pair.primary;
+}
+
+export async function refreshVyjazdRoute(id: string): Promise<Vyjazd | null> {
+  return updateVyjazd(id, {}, { forceRoute: true });
 }
 
 export async function listMergeableVyjazdy(excludeId: string): Promise<Vyjazd[]> {

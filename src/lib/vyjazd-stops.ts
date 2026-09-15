@@ -3,6 +3,7 @@ import type {
   ServiceDevice,
   TicketPriority,
   Vyjazd,
+  VyjazdRouteSummary,
   VyjazdStatus,
   VyjazdStop,
   VyjazdStopInput,
@@ -273,6 +274,36 @@ export function markStopsDone(stops: VyjazdStop[], done: boolean): VyjazdStop[] 
   return stops.map((stop) => ({ ...stop, done }));
 }
 
+export function hydrateRouteSummary(raw: unknown): VyjazdRouteSummary | null {
+  if (raw == null || raw === "") return null;
+  let value: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      value = JSON.parse(raw) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object") return null;
+  const r = value as Partial<VyjazdRouteSummary>;
+  const distanceMeters = Math.max(0, Number(r.distanceMeters) || 0);
+  const durationSeconds = Math.max(0, Number(r.durationSeconds) || 0);
+  const status: VyjazdRouteSummary["status"] =
+    r.status === "ok" || r.status === "incomplete" || r.status === "error"
+      ? r.status
+      : distanceMeters > 0 && durationSeconds > 0
+        ? "ok"
+        : "error";
+  return {
+    status,
+    distanceMeters,
+    durationSeconds,
+    computedAt: String(r.computedAt ?? ""),
+    fingerprint: String(r.fingerprint ?? ""),
+    error: String(r.error ?? ""),
+  };
+}
+
 export function hydrateVyjazd(
   v: Partial<Vyjazd> & Pick<Vyjazd, "id" | "number" | "title">,
   nowIso = () => new Date().toISOString(),
@@ -294,6 +325,7 @@ export function hydrateVyjazd(
     description: v.description ?? "",
     result: v.result ?? "",
     stops,
+    route: hydrateRouteSummary(v.route),
     createdAt: v.createdAt ?? nowIso(),
     updatedAt: v.updatedAt ?? nowIso(),
   };
