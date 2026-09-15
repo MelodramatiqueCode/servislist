@@ -377,9 +377,3 @@ export function routeNavigationUrl(
   const waypoints = queries.slice(0, -1);
   return googleMapsDirUrl(destination, waypoints);
 }
-
-export function vyjazdNavigationUrl(
-  stops: Array<{ store?: string; address?: string }>,
-) {
-  return routeNavigationUrl(stops) ?? stopNavigationUrl(stops[0] ?? {});
-}
