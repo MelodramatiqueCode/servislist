@@ -9,7 +9,9 @@ async function main() {
   }
 
   await ensureSchema();
-  console.log("Schema OK — tabuľky tickets + app_meta sú pripravené.");
+  console.log(
+    "Schema OK — tabuľky tickets + vyjazdy + app_meta sú pripravené.",
+  );
 }
 
 main().catch((error) => {

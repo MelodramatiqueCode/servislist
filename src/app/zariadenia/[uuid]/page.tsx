@@ -6,8 +6,10 @@ import {
   memoryLabel,
   storageLabel,
 } from "@/lib/parse-device";
+import { SuggestionCard } from "@/components/suggestion-card";
 import { formatDate, statusClass, ticketCode } from "@/lib/format";
 import { ensureFreshBalenaSync, getDevice, listTickets } from "@/lib/store";
+import { listVyjazdSuggestions } from "@/lib/suggestions";
 import { STATUS_LABELS } from "@/lib/types";
 
 export default async function DeviceDetailPage({
@@ -20,7 +22,11 @@ export default async function DeviceDetailPage({
   const device = await getDevice(uuid);
   if (!device) notFound();
 
-  const tickets = await listTickets({ deviceUuid: uuid });
+  const [tickets, suggestions] = await Promise.all([
+    listTickets({ deviceUuid: uuid }),
+    listVyjazdSuggestions({ deviceUuid: uuid, limit: 1 }),
+  ]);
+  const suggestion = suggestions[0] ?? null;
   const alert = hasHealthAlert(device);
 
   return (
@@ -160,7 +166,24 @@ export default async function DeviceDetailPage({
             >
               + Nový problém
             </Link>
+            <Link
+              href={`/vyjazdy/novy?device=${device.uuid}`}
+              className="btn btn-ghost w-full"
+            >
+              + Naplánovať výjazd
+            </Link>
           </div>
+
+          {suggestion ? (
+            <div className="panel space-y-3 p-5">
+              <h2 className="text-lg font-bold">Navrhovaný výjazd</h2>
+              <p className="text-sm text-[var(--ink-soft)]">
+                Automatický návrh z aktuálnych signálov — vyber jednu z dvoch
+                možností.
+              </p>
+              <SuggestionCard suggestion={suggestion} compact />
+            </div>
+          ) : null}
 
           <div className="panel space-y-3 p-5">
             <h2 className="text-lg font-bold">Tickety ({tickets.length})</h2>

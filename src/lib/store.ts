@@ -4,14 +4,18 @@ import path from "path";
 import {
   dbReadDeviceStore,
   dbReadTicketStore,
+  dbReadVyjazdStore,
   dbWriteDeviceStore,
   dbWriteTicketStore,
+  dbWriteVyjazdStore,
   isDatabaseConfigured,
 } from "./db";
 import {
-  ALERT_TYPES,
+  ALERT_LABELS,
+  activationNote,
+  alertPriority,
   buildAlertTicket,
-  isAlertActive,
+  detectActiveAlerts,
   isAlertAutoCloseEnabled,
   isAlertsEnabled,
   recoveryNote,
@@ -26,6 +30,7 @@ import { normalizeBalenaDevice, matchesHealthFilter, isDiskFull, isHot } from ".
 import type {
   BalenaDeviceRaw,
   CreateTicketInput,
+  CreateVyjazdInput,
   DeviceStore,
   ServiceDevice,
   Ticket,
@@ -34,12 +39,17 @@ import type {
   TicketSource,
   TicketStatus,
   TicketStore,
+  UpdateVyjazdInput,
+  Vyjazd,
+  VyjazdStatus,
+  VyjazdStore,
 } from "./types";
 import type { DeviceHealthFilter } from "./parse-device";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const TICKETS_FILE = path.join(DATA_DIR, "tickets.json");
 const DEVICES_FILE = path.join(DATA_DIR, "devices.json");
+const VYJAZDY_FILE = path.join(DATA_DIR, "vyjazdy.json");
 const STALE_MS = 2 * 60 * 1000;
 
 function nowIso() {
@@ -215,18 +225,33 @@ export type SyncResult = {
 
 const OPEN_STATUSES: TicketStatus[] = ["otvorene", "v_rieseni", "caka_diely"];
 
-function findOpenAlertTicket(
-  store: TicketStore,
-  deviceUuid: string,
-  alertType: AlertType,
-) {
+const ALERT_PRIORITY_RANK: Record<TicketPriority, number> = {
+  nizka: 0,
+  normalna: 1,
+  vysoka: 2,
+  urgentna: 3,
+};
+
+function findOpenAutoTicket(store: TicketStore, deviceUuid: string) {
   return store.tickets.find(
     (t) =>
       t.source === "auto" &&
-      t.alertType === alertType &&
       t.deviceUuid === deviceUuid &&
       OPEN_STATUSES.includes(t.status),
   );
+}
+
+function highestAlert(types: AlertType[]): AlertType {
+  return types.reduce((best, type) =>
+    ALERT_PRIORITY_RANK[alertPriority(type)] >
+    ALERT_PRIORITY_RANK[alertPriority(best)]
+      ? type
+      : best,
+  );
+}
+
+function autoNote(text: string, createdAt: string): TicketNote {
+  return { id: randomUUID(), text, author: "Automat", createdAt };
 }
 
 export async function reconcileDeviceAlerts(
@@ -242,18 +267,31 @@ export async function reconcileDeviceAlerts(
   const autoClose = isAlertAutoCloseEnabled();
   let created = 0;
   let resolved = 0;
+  let dirty = false;
   const timestamp = nowIso();
 
   for (const device of current) {
     const prev = prevMap.get(device.uuid);
 
-    for (const type of ALERT_TYPES) {
-      const nowActive = isAlertActive(device, type);
-      const wasActive = prev ? isAlertActive(prev, type) : false;
-      const open = findOpenAlertTicket(store, device.uuid, type);
+    const activeNow = detectActiveAlerts(device);
+    const activePrev = prev ? detectActiveAlerts(prev) : [];
+    const prevSet = new Set(activePrev);
+    const nowSet = new Set(activeNow);
+    const newlyActive = activeNow.filter((type) => !prevSet.has(type));
+    const newlyCleared = activePrev.filter((type) => !nowSet.has(type));
 
-      if (nowActive && !wasActive && !open) {
-        const input = buildAlertTicket(device, type);
+    if (newlyActive.length === 0 && newlyCleared.length === 0) {
+      continue;
+    }
+
+    let open = findOpenAutoTicket(store, device.uuid);
+
+    // A newly active alert on a device without an open auto-ticket opens ONE
+    // grouped ticket; otherwise we append notes to the existing ticket.
+    if (newlyActive.length > 0) {
+      if (!open) {
+        const primary = highestAlert(newlyActive);
+        const input = buildAlertTicket(device, primary);
         const ticket: Ticket = {
           id: randomUUID(),
           number: store.nextNumber,
@@ -271,32 +309,58 @@ export async function reconcileDeviceAlerts(
           createdAt: timestamp,
           updatedAt: timestamp,
           source: "auto",
-          alertType: type,
+          alertType: primary,
         };
+
+        const others = activeNow.filter((type) => type !== primary);
+        if (others.length > 0) {
+          ticket.notes.push(
+            autoNote(
+              `Pri vytvorení ticketu boli aktívne aj: ${others
+                .map((type) => ALERT_LABELS[type])
+                .join(", ")}.`,
+              timestamp,
+            ),
+          );
+        }
+
         store.nextNumber += 1;
         store.tickets.unshift(ticket);
         created += 1;
-        continue;
-      }
-
-      if (!nowActive && open) {
-        const note: TicketNote = {
-          id: randomUUID(),
-          text: recoveryNote(type, device),
-          author: "Automat",
-          createdAt: timestamp,
-        };
-        open.notes.push(note);
-        open.updatedAt = timestamp;
-        if (autoClose) {
-          open.status = "hotove";
+        dirty = true;
+        open = ticket;
+      } else {
+        for (const type of newlyActive) {
+          open.notes.push(autoNote(activationNote(type, device), timestamp));
+          if (
+            ALERT_PRIORITY_RANK[alertPriority(type)] >
+            ALERT_PRIORITY_RANK[open.priority]
+          ) {
+            open.priority = alertPriority(type);
+            open.alertType = type;
+          }
         }
+        open.updatedAt = timestamp;
+        dirty = true;
+      }
+    }
+
+    // Cleared alerts add a recovery note; the ticket only auto-closes once
+    // NO alert types remain active on the device.
+    if (newlyCleared.length > 0 && open) {
+      for (const type of newlyCleared) {
+        open.notes.push(autoNote(recoveryNote(type, device), timestamp));
         resolved += 1;
       }
+      open.updatedAt = timestamp;
+      if (activeNow.length === 0 && autoClose) {
+        open.status = "hotove";
+      }
+      dirty = true;
     }
   }
 
-  if (created > 0 || resolved > 0) {
+  if (dirty) {
     await writeTicketStore(store);
   }
 
@@ -658,5 +722,230 @@ export async function getStats() {
     v_rieseni: tickets.filter((t) => t.status === "v_rieseni").length,
     caka_diely: tickets.filter((t) => t.status === "caka_diely").length,
     hotove: tickets.filter((t) => t.status === "hotove").length,
+  };
+}
+
+function seedVyjazdy(): VyjazdStore {
+  return {
+    nextNumber: 1,
+    vyjazdy: [],
+  };
+}
+
+function hydrateVyjazd(
+  v: Partial<Vyjazd> & Pick<Vyjazd, "id" | "number" | "title">,
+): Vyjazd {
+  return {
+    id: v.id,
+    number: v.number,
+    title: v.title,
+    store: v.store ?? "",
+    address: v.address ?? "",
+    contactPhone: v.contactPhone ?? "",
+    technician: v.technician ?? "",
+    scheduledAt: v.scheduledAt ?? "",
+    status: v.status ?? "naplanovany",
+    priority: v.priority ?? "normalna",
+    deviceUuid: v.deviceUuid ?? "",
+    ticketId: v.ticketId ?? "",
+    description: v.description ?? "",
+    result: v.result ?? "",
+    createdAt: v.createdAt ?? nowIso(),
+    updatedAt: v.updatedAt ?? nowIso(),
+  };
+}
+
+async function ensureVyjazdyFile() {
+  await ensureDir();
+  try {
+    await fs.access(VYJAZDY_FILE);
+  } catch {
+    await fs.writeFile(
+      VYJAZDY_FILE,
+      JSON.stringify(seedVyjazdy(), null, 2),
+      "utf8",
+    );
+  }
+}
+
+async function readVyjazdStore(): Promise<VyjazdStore> {
+  if (isDatabaseConfigured()) {
+    return dbReadVyjazdStore();
+  }
+  await ensureVyjazdyFile();
+  const raw = await fs.readFile(VYJAZDY_FILE, "utf8");
+  const store = JSON.parse(raw) as VyjazdStore;
+  store.vyjazdy = (store.vyjazdy ?? []).map(hydrateVyjazd);
+  return store;
+}
+
+async function writeVyjazdStore(store: VyjazdStore) {
+  if (isDatabaseConfigured()) {
+    await dbWriteVyjazdStore(store);
+    return;
+  }
+  await ensureDir();
+  await fs.writeFile(VYJAZDY_FILE, JSON.stringify(store, null, 2), "utf8");
+}
+
+const VYJAZD_ACTIVE: VyjazdStatus[] = ["naplanovany", "prebieha"];
+
+function sortVyjazdy(vyjazdy: Vyjazd[]) {
+  const rank: Record<VyjazdStatus, number> = {
+    prebieha: 0,
+    naplanovany: 1,
+    hotovy: 2,
+    zruseny: 3,
+  };
+  return [...vyjazdy].sort((a, b) => {
+    if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status];
+    const at = a.scheduledAt ? new Date(a.scheduledAt).getTime() : Infinity;
+    const bt = b.scheduledAt ? new Date(b.scheduledAt).getTime() : Infinity;
+    if (at !== bt) return at - bt;
+    return b.number - a.number;
+  });
+}
+
+export async function listVyjazdy(filters?: {
+  status?: VyjazdStatus | "vsetky";
+  q?: string;
+  deviceUuid?: string;
+}): Promise<Vyjazd[]> {
+  const store = await readVyjazdStore();
+  let vyjazdy = [...store.vyjazdy];
+
+  if (filters?.status && filters.status !== "vsetky") {
+    vyjazdy = vyjazdy.filter((v) => v.status === filters.status);
+  }
+
+  if (filters?.deviceUuid) {
+    vyjazdy = vyjazdy.filter((v) => v.deviceUuid === filters.deviceUuid);
+  }
+
+  if (filters?.q?.trim()) {
+    const q = filters.q.trim().toLowerCase();
+    vyjazdy = vyjazdy.filter((v) => {
+      const hay = [
+        v.title,
+        v.store,
+        v.address,
+        v.technician,
+        v.contactPhone,
+        v.description,
+        v.result,
+        v.deviceUuid,
+        String(v.number),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  return sortVyjazdy(vyjazdy);
+}
+
+export async function getVyjazd(id: string): Promise<Vyjazd | null> {
+  const store = await readVyjazdStore();
+  return store.vyjazdy.find((v) => v.id === id) ?? null;
+}
+
+export async function createVyjazd(input: CreateVyjazdInput): Promise<Vyjazd> {
+  const store = await readVyjazdStore();
+  const timestamp = nowIso();
+  const vyjazd: Vyjazd = {
+    id: randomUUID(),
+    number: store.nextNumber,
+    title: input.title.trim(),
+    store: (input.store ?? "").trim(),
+    address: (input.address ?? "").trim(),
+    contactPhone: (input.contactPhone ?? "").trim(),
+    technician: (input.technician ?? "").trim() || "Nepriradené",
+    scheduledAt: (input.scheduledAt ?? "").trim(),
+    status: input.status ?? "naplanovany",
+    priority: input.priority ?? "normalna",
+    deviceUuid: (input.deviceUuid ?? "").trim(),
+    ticketId: (input.ticketId ?? "").trim(),
+    description: (input.description ?? "").trim(),
+    result: (input.result ?? "").trim(),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+
+  store.nextNumber += 1;
+  store.vyjazdy.unshift(vyjazd);
+  await writeVyjazdStore(store);
+  return vyjazd;
+}
+
+export async function updateVyjazd(
+  id: string,
+  patch: UpdateVyjazdInput,
+): Promise<Vyjazd | null> {
+  const store = await readVyjazdStore();
+  const vyjazd = store.vyjazdy.find((v) => v.id === id);
+  if (!vyjazd) return null;
+
+  const fields: (keyof UpdateVyjazdInput)[] = [
+    "title",
+    "store",
+    "address",
+    "contactPhone",
+    "technician",
+    "scheduledAt",
+    "status",
+    "priority",
+    "deviceUuid",
+    "ticketId",
+    "description",
+    "result",
+  ];
+
+  for (const key of fields) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    if (typeof value === "string") {
+      (vyjazd[key] as string) = value.trim();
+    } else {
+      (vyjazd[key] as typeof value) = value;
+    }
+  }
+
+  vyjazd.updatedAt = nowIso();
+  await writeVyjazdStore(store);
+  return vyjazd;
+}
+
+export async function updateVyjazdStatus(
+  id: string,
+  status: VyjazdStatus,
+): Promise<Vyjazd | null> {
+  return updateVyjazd(id, { status });
+}
+
+export async function deleteVyjazd(id: string): Promise<boolean> {
+  const store = await readVyjazdStore();
+  const before = store.vyjazdy.length;
+  store.vyjazdy = store.vyjazdy.filter((v) => v.id !== id);
+  if (store.vyjazdy.length === before) return false;
+  await writeVyjazdStore(store);
+  return true;
+}
+
+export async function getVyjazdStats() {
+  const vyjazdy = await listVyjazdy();
+  const now = Date.now();
+  return {
+    total: vyjazdy.length,
+    naplanovany: vyjazdy.filter((v) => v.status === "naplanovany").length,
+    prebieha: vyjazdy.filter((v) => v.status === "prebieha").length,
+    hotovy: vyjazdy.filter((v) => v.status === "hotovy").length,
+    zruseny: vyjazdy.filter((v) => v.status === "zruseny").length,
+    overdue: vyjazdy.filter(
+      (v) =>
+        VYJAZD_ACTIVE.includes(v.status) &&
+        v.scheduledAt !== "" &&
+        new Date(v.scheduledAt).getTime() < now,
+    ).length,
   };
 }

@@ -1,5 +1,12 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
-import type { DeviceStore, ServiceDevice, Ticket, TicketStore } from "./types";
+import type {
+  DeviceStore,
+  ServiceDevice,
+  Ticket,
+  TicketStore,
+  Vyjazd,
+  VyjazdStore,
+} from "./types";
 
 type Sql = NeonQueryFunction<false, false>;
 
@@ -75,8 +82,39 @@ export async function ensureSchema() {
         ON tickets (source, alert_type, device_uuid, status)
       `;
       await sql`
+        CREATE TABLE IF NOT EXISTS vyjazdy (
+          id TEXT PRIMARY KEY,
+          number INTEGER NOT NULL UNIQUE,
+          title TEXT NOT NULL,
+          store TEXT NOT NULL DEFAULT '',
+          address TEXT NOT NULL DEFAULT '',
+          contact_phone TEXT NOT NULL DEFAULT '',
+          technician TEXT NOT NULL DEFAULT '',
+          scheduled_at TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL,
+          priority TEXT NOT NULL,
+          device_uuid TEXT NOT NULL DEFAULT '',
+          ticket_id TEXT NOT NULL DEFAULT '',
+          description TEXT NOT NULL DEFAULT '',
+          result TEXT NOT NULL DEFAULT '',
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS vyjazdy_status_idx ON vyjazdy (status)
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS vyjazdy_device_uuid_idx ON vyjazdy (device_uuid)
+      `;
+      await sql`
         INSERT INTO app_meta (key, value)
         VALUES ('next_ticket_number', '1')
+        ON CONFLICT (key) DO NOTHING
+      `;
+      await sql`
+        INSERT INTO app_meta (key, value)
+        VALUES ('next_vyjazd_number', '1')
         ON CONFLICT (key) DO NOTHING
       `;
       await sql`
@@ -206,6 +244,106 @@ export async function dbWriteTicketStore(store: TicketStore) {
         notes = EXCLUDED.notes,
         source = EXCLUDED.source,
         alert_type = EXCLUDED.alert_type,
+        updated_at = EXCLUDED.updated_at
+    `;
+  }
+}
+
+function rowToVyjazd(row: Record<string, unknown>): Vyjazd {
+  return {
+    id: String(row.id),
+    number: Number(row.number),
+    title: String(row.title),
+    store: String(row.store ?? ""),
+    address: String(row.address ?? ""),
+    contactPhone: String(row.contact_phone ?? ""),
+    technician: String(row.technician ?? ""),
+    scheduledAt: String(row.scheduled_at ?? ""),
+    status: row.status as Vyjazd["status"],
+    priority: row.priority as Vyjazd["priority"],
+    deviceUuid: String(row.device_uuid ?? ""),
+    ticketId: String(row.ticket_id ?? ""),
+    description: String(row.description ?? ""),
+    result: String(row.result ?? ""),
+    createdAt:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : String(row.created_at),
+    updatedAt:
+      row.updated_at instanceof Date
+        ? row.updated_at.toISOString()
+        : String(row.updated_at),
+  };
+}
+
+export async function dbReadVyjazdStore(): Promise<VyjazdStore> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT *
+    FROM vyjazdy
+    ORDER BY updated_at DESC
+  `;
+  const nextNumber = Number(await getMeta("next_vyjazd_number", "1")) || 1;
+  return {
+    nextNumber,
+    vyjazdy: rows.map((row) => rowToVyjazd(row as Record<string, unknown>)),
+  };
+}
+
+export async function dbWriteVyjazdStore(store: VyjazdStore) {
+  await ensureSchema();
+  const sql = getSql();
+
+  await setMeta("next_vyjazd_number", String(store.nextNumber));
+
+  const keepIds = new Set(store.vyjazdy.map((v) => v.id));
+  const existing = await sql`SELECT id FROM vyjazdy`;
+  for (const row of existing) {
+    const id = String((row as Record<string, unknown>).id);
+    if (!keepIds.has(id)) {
+      await sql`DELETE FROM vyjazdy WHERE id = ${id}`;
+    }
+  }
+
+  for (const v of store.vyjazdy) {
+    await sql`
+      INSERT INTO vyjazdy (
+        id, number, title, store, address, contact_phone, technician,
+        scheduled_at, status, priority, device_uuid, ticket_id,
+        description, result, created_at, updated_at
+      ) VALUES (
+        ${v.id},
+        ${v.number},
+        ${v.title},
+        ${v.store},
+        ${v.address},
+        ${v.contactPhone},
+        ${v.technician},
+        ${v.scheduledAt},
+        ${v.status},
+        ${v.priority},
+        ${v.deviceUuid || ""},
+        ${v.ticketId || ""},
+        ${v.description},
+        ${v.result},
+        ${v.createdAt}::timestamptz,
+        ${v.updatedAt}::timestamptz
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        number = EXCLUDED.number,
+        title = EXCLUDED.title,
+        store = EXCLUDED.store,
+        address = EXCLUDED.address,
+        contact_phone = EXCLUDED.contact_phone,
+        technician = EXCLUDED.technician,
+        scheduled_at = EXCLUDED.scheduled_at,
+        status = EXCLUDED.status,
+        priority = EXCLUDED.priority,
+        device_uuid = EXCLUDED.device_uuid,
+        ticket_id = EXCLUDED.ticket_id,
+        description = EXCLUDED.description,
+        result = EXCLUDED.result,
         updated_at = EXCLUDED.updated_at
     `;
   }

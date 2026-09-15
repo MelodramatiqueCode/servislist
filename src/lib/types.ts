@@ -126,6 +126,55 @@ export type TicketStore = {
   tickets: Ticket[];
 };
 
+export type VyjazdStatus =
+  | "naplanovany"
+  | "prebieha"
+  | "hotovy"
+  | "zruseny";
+
+export type Vyjazd = {
+  id: string;
+  number: number;
+  title: string;
+  store: string;
+  address: string;
+  contactPhone: string;
+  technician: string;
+  scheduledAt: string;
+  status: VyjazdStatus;
+  priority: TicketPriority;
+  deviceUuid: string;
+  ticketId: string;
+  description: string;
+  result: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateVyjazdInput = {
+  title: string;
+  store: string;
+  address?: string;
+  contactPhone?: string;
+  technician?: string;
+  scheduledAt?: string;
+  status?: VyjazdStatus;
+  priority?: TicketPriority;
+  deviceUuid?: string;
+  ticketId?: string;
+  description?: string;
+  result?: string;
+};
+
+export type UpdateVyjazdInput = Partial<
+  Omit<Vyjazd, "id" | "number" | "createdAt" | "updatedAt">
+>;
+
+export type VyjazdStore = {
+  nextNumber: number;
+  vyjazdy: Vyjazd[];
+};
+
 export type DeviceStore = {
   importedAt: string;
   syncedAt?: string;
@@ -138,6 +187,13 @@ export const STATUS_LABELS: Record<TicketStatus, string> = {
   v_rieseni: "V riešení",
   caka_diely: "Čaká diely",
   hotove: "Hotové",
+};
+
+export const VYJAZD_STATUS_LABELS: Record<VyjazdStatus, string> = {
+  naplanovany: "Naplánovaný",
+  prebieha: "Prebieha",
+  hotovy: "Hotový",
+  zruseny: "Zrušený",
 };
 
 export const PRIORITY_LABELS: Record<TicketPriority, string> = {

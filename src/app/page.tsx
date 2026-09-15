@@ -78,6 +78,9 @@ export default async function Home({
           <Link href="/zariadenia" className="btn btn-ghost">
             Zariadenia ({deviceStats.total})
           </Link>
+          <Link href="/vyjazdy" className="btn btn-ghost">
+            Výjazdy
+          </Link>
         </div>
       </section>
 

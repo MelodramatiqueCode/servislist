@@ -131,6 +131,15 @@ export function buildAlertTicket(device: ServiceDevice, type: AlertType) {
   };
 }
 
+export function activationNote(type: AlertType, device: ServiceDevice) {
+  return [
+    `Nový alert „${ALERT_LABELS[type]}“ (priorita: ${alertPriority(type)}).`,
+    "",
+    "Stav pri detekcii:",
+    metricLines(device),
+  ].join("\n");
+}
+
 export function recoveryNote(type: AlertType, device: ServiceDevice) {
   const bits = [
     `Alert „${ALERT_LABELS[type]}“ sa vyriešil (zariadenie je OK podľa syncu).`,
