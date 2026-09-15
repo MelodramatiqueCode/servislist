@@ -70,7 +70,7 @@ curl -X POST "https://YOUR_APP.vercel.app/api/sync-balena?force=1" \
 ## Čo vie
 
 - Katalóg Balena zariadení (online/offline, undervolt, teplota, disk, VPN)
-- Live sync + auto-tickety pri nových health alertaoch
+- Live sync z flotily + auto-tickety pri health alertoch; zariadenia, ktoré v Balene už nie sú, sa z katalógu vyradia
 - Tickety naviazané na UUID zariadenia, poznámky, priority
 - Servisné výjazdy ako trasa po prevádzkach (zastávky, ticknutie, návrh trasy)
 - Odhad jazdy po trase (~km a ~čas) z OSM/OSRM, bez Google Maps účtu
