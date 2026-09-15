@@ -71,7 +71,7 @@ export default async function VyjazdyPage({
   const [vyjazdy, stats, suggestions] = await Promise.all([
     listVyjazdy({ status, q }),
     getVyjazdStats(),
-    listVyjazdSuggestions({ limit: 6 }),
+    listVyjazdSuggestions({ limit: 8 }),
   ]);
 
   return (
@@ -135,8 +135,9 @@ export default async function VyjazdyPage({
               <h2 className="text-lg font-bold">Automatické návrhy výjazdov</h2>
               <p className="text-sm text-[var(--ink-soft)]">
                 Z otvorených ticketov a Balena alertov. Expres = jedna
-                prevádzka. Trasa = okruh po rovnakom partnerovi / meste (max 4–5
-                zastávok, najprv priority a alerty).
+                prevádzka. Trasa = okruh po partnerovi / meste. Okruh
+                problematiky = všetky voľné prevádzky s tým istým alertom
+                (undervolt, offline, horúce, disk, VPN; max 4–5 zastávok).
               </p>
             </div>
             <span className="chip chip-warn">{suggestions.length}</span>

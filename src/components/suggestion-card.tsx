@@ -33,7 +33,11 @@ export function SuggestionCard({
           <span className={`chip ${priorityClass(s.priority)}`}>
             {PRIORITY_LABELS[s.priority]}
           </span>
-          {routeStops > 1 ? (
+          {s.kind === "theme" && routeStops > 0 ? (
+            <span className="chip chip-warn">
+              Okruh problematiky · {prevadzkyCountLabel(routeStops)}
+            </span>
+          ) : routeStops > 1 ? (
             <span className="chip chip-warn">
               Trasa · {prevadzkyCountLabel(routeStops)}
             </span>
@@ -64,7 +68,8 @@ export function SuggestionCard({
       {routeOpt ? (
         <div className="mt-3 rounded-xl border border-[var(--line)] bg-white/80 px-3 py-2.5">
           <div className="text-xs font-bold uppercase tracking-wide text-[var(--teal-deep)]">
-            Trasa{s.routeTheme ? ` · ${s.routeTheme}` : ""}
+            {s.kind === "theme" ? "Okruh" : "Trasa"}
+            {s.routeTheme ? ` · ${s.routeTheme}` : ""}
           </div>
           <ol className="mt-1 space-y-0.5 text-sm">
             {routeOpt.stops.map((stop, index) => (

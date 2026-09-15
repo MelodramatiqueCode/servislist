@@ -1,8 +1,11 @@
 import {
   ALERT_LABELS,
+  ALERT_TYPES,
   alertPriority,
   detectActiveAlerts,
+  isAlertActive,
   isAlertsEnabled,
+  type AlertType,
 } from "./alerts";
 import { hasHealthAlert } from "./parse-device";
 import { ticketCode } from "./format";
@@ -40,6 +43,7 @@ export type SuggestionOption = {
 
 export type VyjazdSuggestion = {
   key: string;
+  kind: "place" | "theme";
   store: string;
   address: string;
   contactPhone: string;
@@ -432,6 +436,162 @@ function buildRouteDescription(route: PrevadzkaBucket[]) {
   return lines.join("\n");
 }
 
+function bucketHasAlert(bucket: PrevadzkaBucket, type: AlertType) {
+  return bucket.candidates.some(
+    (c) => c.device != null && isAlertActive(c.device, type),
+  );
+}
+
+function pickThemeRoute(buckets: PrevadzkaBucket[]): PrevadzkaBucket[] {
+  const ranked = [...buckets].sort((a, b) => {
+    if (PRIORITY_RANK[a.priority] !== PRIORITY_RANK[b.priority]) {
+      return PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority];
+    }
+    if (a.reasons.length !== b.reasons.length) {
+      return b.reasons.length - a.reasons.length;
+    }
+    const city = cityGroupId(a.city).localeCompare(cityGroupId(b.city), "sk");
+    if (city) return city;
+    return a.store.localeCompare(b.store, "sk");
+  });
+
+  const picked: PrevadzkaBucket[] = [];
+  for (const bucket of ranked) {
+    if (picked.length < TARGET_ROUTE_STOPS) {
+      picked.push(bucket);
+      continue;
+    }
+    if (
+      picked.length < MAX_ROUTE_STOPS &&
+      PRIORITY_RANK[bucket.priority] >= PRIORITY_RANK.vysoka
+    ) {
+      picked.push(bucket);
+      break;
+    }
+  }
+
+  return [...picked].sort((a, b) => {
+    const ga = cityGroupId(a.city);
+    const gb = cityGroupId(b.city);
+    if (ga !== gb) return ga.localeCompare(gb, "sk");
+    const partner = a.partner.localeCompare(b.partner, "sk");
+    if (partner) return partner;
+    return a.store.localeCompare(b.store, "sk");
+  });
+}
+
+function buildThemeDescription(type: AlertType, route: PrevadzkaBucket[]) {
+  const label = ALERT_LABELS[type];
+  const lines: string[] = [
+    `Automatický okruh problematiky: ${label}.`,
+    "Zastávky sú prevádzky, kde zariadenie aktuálne hlási tento alert a ešte nie sú v naplánovanom / prebiehajúcom výjazde.",
+    "",
+    `Okruh (${prevadzkyCountLabel(route.length)}):`,
+  ];
+  route.forEach((bucket, index) => {
+    const devices = bucket.candidates.filter(
+      (c) => c.device != null && isAlertActive(c.device, type),
+    );
+    const names = devices.map((c) => c.deviceName).filter(Boolean);
+    lines.push(
+      `${index + 1}. ${bucket.store}${bucket.address ? ` — ${bucket.address}` : ""}`,
+    );
+    if (names.length > 0) {
+      lines.push(`   • ${names.join(", ")}`);
+    }
+    for (const reason of bucket.reasons.slice(0, 2)) {
+      lines.push(`   • ${reason}`);
+    }
+  });
+  return lines.join("\n");
+}
+
+function buildThemeSuggestion(
+  type: AlertType,
+  route: PrevadzkaBucket[],
+  leftover: number,
+  now: Date,
+): VyjazdSuggestion {
+  const label = ALERT_LABELS[type];
+  const candidate = primaryCandidate(route[0]);
+  const planned = plannedSlot(now);
+  const deviceCount = route.reduce(
+    (sum, bucket) =>
+      sum +
+      bucket.candidates.filter(
+        (c) => c.device != null && isAlertActive(c.device, type),
+      ).length,
+    0,
+  );
+  const priority = route.reduce(
+    (best, bucket) => maxPriority(best, bucket.priority),
+    alertPriority(type),
+  );
+  const reasons = [
+    `${prevadzkyCountLabel(route.length)} s aktuálnym alertom ${label}, ešte bez výjazdu.`,
+  ];
+  if (leftover > 0) {
+    reasons.push(
+      `Ďalších ${prevadzkyCountLabel(leftover)} s týmto alertom sa zmestí do ďalšieho okruhu (cap ${MAX_ROUTE_STOPS}).`,
+    );
+  }
+  reasons.push("Zoradené podľa závažnosti, potom mesto / partner.");
+
+  return {
+    key: `theme:${type}`,
+    kind: "theme",
+    store: `Okruh: ${label}`,
+    address: candidate.address,
+    contactPhone: candidate.phone,
+    deviceUuid: candidate.deviceUuid,
+    deviceName: "",
+    ticketId: candidate.ticketId,
+    reasons,
+    priority,
+    storeDeviceCount: deviceCount,
+    stopCount: route.length,
+    routeTheme: label,
+    options: [
+      {
+        id: "planovany",
+        label: `Okruh problematiky · ${prevadzkyCountLabel(route.length)} · ${slotLabel(planned, now)}`,
+        hint: `Jeden výjazd po prevádzkach s alertom ${label}`,
+        scope: "combined",
+        title: `Okruh: ${label} — ${prevadzkyCountLabel(route.length)}`,
+        description: buildThemeDescription(type, route),
+        scheduledAt: toLocalInput(planned),
+        scheduledLabel: slotLabel(planned, now),
+        priority,
+        stops: route.map(stopFromBucket),
+      },
+    ],
+  };
+}
+
+function themeSuggestionsFor(
+  uncovered: PrevadzkaBucket[],
+  now: Date,
+): VyjazdSuggestion[] {
+  if (!isAlertsEnabled()) return [];
+  const out: VyjazdSuggestion[] = [];
+  for (const type of ALERT_TYPES) {
+    const matching = uncovered.filter((bucket) => bucketHasAlert(bucket, type));
+    if (matching.length < 2) continue;
+    const route = pickThemeRoute(matching);
+    if (route.length < 2) continue;
+    out.push(
+      buildThemeSuggestion(type, route, matching.length - route.length, now),
+    );
+  }
+  out.sort((a, b) => {
+    if (PRIORITY_RANK[a.priority] !== PRIORITY_RANK[b.priority]) {
+      return PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority];
+    }
+    return b.stopCount - a.stopCount;
+  });
+  return out;
+}
+
 function buildOptions(
   bucket: PrevadzkaBucket,
   route: PrevadzkaBucket[],
@@ -773,6 +933,7 @@ export async function listVyjazdSuggestions(opts?: {
     const visibleRoute = includeRoute ? route : [bucket];
     return {
       key: bucket.key,
+      kind: "place",
       store: bucket.store,
       address: bucket.address,
       contactPhone: bucket.phone,
@@ -799,6 +960,7 @@ export async function listVyjazdSuggestions(opts?: {
     return a.store.localeCompare(b.store, "sk");
   });
 
+  const themes = forceRoute ? [] : themeSuggestionsFor(uncoveredBuckets, now);
   const limit = opts?.limit ?? 8;
-  return suggestions.slice(0, limit);
+  return [...themes, ...suggestions].slice(0, limit);
 }
