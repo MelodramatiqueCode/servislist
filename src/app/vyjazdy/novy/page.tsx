@@ -79,8 +79,8 @@ export default async function NewVyjazdPage({
         </Link>
         <h1 className="text-3xl font-extrabold md:text-4xl">Nový výjazd</h1>
         <p className="text-[var(--ink-soft)]">
-          Naplánuj servisný výjazd ako trasu — jedna alebo viac prevádzok,
-          v poradí zastávok.
+          Naplánuj servisný výjazd ako trasu — pridaj prevádzky z katalógu,
+          uprav poradie a na detaile ich odtickuj.
         </p>
       </div>
 

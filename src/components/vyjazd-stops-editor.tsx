@@ -3,11 +3,13 @@
 import { useMemo, useState, useTransition } from "react";
 import { MapsNavLink } from "@/components/maps-nav-link";
 import { toggleVyjazdStopDoneAction } from "@/lib/actions";
-import type { VyjazdStop } from "@/lib/types";
+import { VYJAZD_STATUS_LABELS, type VyjazdStatus, type VyjazdStop } from "@/lib/types";
 import {
   emptyStop,
   prevadzkyCountLabel,
+  remainingStopCount,
   routeNavigationUrl,
+  statusAfterStopProgress,
   stopFromDevice,
   stopNavigationUrl,
 } from "@/lib/vyjazd-stops";
@@ -27,11 +29,13 @@ export function VyjazdStopsEditor({
   devices,
   vyjazdId,
   allowTick = false,
+  vyjazdStatus = "naplanovany",
 }: {
   initialStops: VyjazdStop[];
   devices: StopDeviceOption[];
   vyjazdId?: string;
   allowTick?: boolean;
+  vyjazdStatus?: VyjazdStatus;
 }) {
   const [stops, setStops] = useState<VyjazdStop[]>(
     initialStops.length > 0 ? initialStops : [emptyStop()],
@@ -46,14 +50,24 @@ export function VyjazdStopsEditor({
 
   const primary = stops.find((s) => s.store.trim()) ?? stops[0];
   const doneCount = stops.filter((s) => s.done).length;
+  const remaining = remainingStopCount(stops);
+  const liveStatus = statusAfterStopProgress(vyjazdStatus, stops);
   const routeUrl = routeNavigationUrl(stops);
+  const filledCount = stops.filter((s) => s.store.trim() || s.address.trim()).length;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const taken = new Set(
-      stops.map((s) => s.deviceUuid).filter(Boolean),
+    const takenUuid = new Set(stops.map((s) => s.deviceUuid).filter(Boolean));
+    const takenPlace = new Set(
+      stops
+        .map((s) => `${s.store}|${s.address}`.trim().toLowerCase())
+        .filter((key) => key !== "|"),
     );
-    const list = devices.filter((d) => !taken.has(d.uuid));
+    const list = devices.filter((d) => {
+      if (takenUuid.has(d.uuid)) return false;
+      const place = `${d.label}|${d.address}`.trim().toLowerCase();
+      return !takenPlace.has(place);
+    });
     if (!q) return list.slice(0, 80);
     return list
       .filter((d) => {
@@ -71,27 +85,34 @@ export function VyjazdStopsEditor({
 
   function addEmpty() {
     setStops((prev) => [...prev, emptyStop()]);
-    setAdding(false);
     setQuery("");
   }
 
   function addDevice(device: StopDeviceOption) {
     setStops((prev) => [
-      ...prev,
-      stopFromDevice({
-        uuid: device.uuid,
-        code: "",
-        partner: "",
-        city: "",
-        name: device.label,
-        address: device.address,
-        phone: device.phone,
-      }, {
-        store: device.label,
-      }),
+      ...prev.filter(
+        (s) =>
+          s.store.trim() ||
+          s.address.trim() ||
+          s.deviceUuid ||
+          s.contactPhone.trim() ||
+          s.note.trim(),
+      ),
+      stopFromDevice(
+        {
+          uuid: device.uuid,
+          code: "",
+          partner: "",
+          city: "",
+          name: device.label,
+          address: device.address,
+          phone: device.phone,
+        },
+        { store: device.label },
+      ),
     ]);
-    setAdding(false);
     setQuery("");
+    setAdding(true);
   }
 
   function removeStop(id: string) {
@@ -142,52 +163,75 @@ export function VyjazdStopsEditor({
 
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h3 className="text-base font-bold">Prevádzky na výjazde</h3>
+          <h3 className="text-base font-bold">Zastávky / prevádzky</h3>
           <p className="text-sm text-[var(--ink-soft)]">
-            {prevadzkyCountLabel(stops.filter((s) => s.store.trim()).length)}
+            {prevadzkyCountLabel(filledCount)}
             {allowTick
               ? ` · ticknuté ${doneCount} / ${stops.length}`
-              : " · pridaj zastávky trasy, zmeň poradie"}
+              : " · pridaj z katalógu, zmeň poradie, odober"}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {routeUrl ? (
-            <MapsNavLink href={routeUrl} className="btn btn-ghost">
-              Navigácia trasy ↗
-            </MapsNavLink>
-          ) : null}
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setAdding((v) => !v)}
-          >
-            {adding ? "Zavrieť výber" : "+ Pridať prevádzku"}
-          </button>
+        {routeUrl ? (
+          <MapsNavLink href={routeUrl} className="btn btn-ghost btn-tool">
+            Navigácia trasy ↗
+          </MapsNavLink>
+        ) : null}
+      </div>
+
+      {allowTick ? (
+        <div className="rounded-xl border border-[var(--line)] bg-white/70 px-3.5 py-3 text-sm">
+          <div className="font-bold">
+            Stav: {VYJAZD_STATUS_LABELS[liveStatus]}
+          </div>
+          <p className="mt-1 text-[var(--ink-soft)]">
+            {doneCount === 0
+              ? "Prvé ticknutie dá Prebieha. Ťukni na zelený/teal pruh na zastávke."
+              : remaining === 0
+                ? "Všetky zastávky sú ticknuté → Hotový."
+                : `Prebieha · zostáva ${prevadzkyCountLabel(remaining)}. Posledné ticknutie dá Hotový.`}
+          </p>
         </div>
+      ) : null}
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => setAdding((v) => !v)}
+        >
+          {adding ? "Zavrieť katalóg" : "Pridať z katalógu"}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={addEmpty}>
+          Pridať ručne
+        </button>
       </div>
 
       {adding ? (
         <div className="space-y-3 rounded-xl border border-[var(--line)] bg-white/70 p-3">
           <div className="field">
-            <label htmlFor="stop-search">Hľadať prevádzku / zariadenie</label>
+            <label htmlFor="stop-search">Hľadať v katalógu prevádzok</label>
             <input
               id="stop-search"
               value={query}
+              autoFocus
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Hľadaj číslo, mesto, partnera, UUID…"
+              placeholder="Číslo, mesto, partner, adresa…"
             />
           </div>
-          <ul className="max-h-56 overflow-auto rounded-xl border border-[var(--line)] bg-white/80">
+          <p className="text-xs text-[var(--ink-soft)]">
+            Ťukni na prevádzku — pridá sa na koniec trasy. Katalóg ostane otvorený, kým ho nezavrieš.
+          </p>
+          <ul className="max-h-72 overflow-auto rounded-xl border border-[var(--line)] bg-white/80">
             {filtered.length === 0 ? (
               <li className="px-3 py-3 text-sm text-[var(--ink-soft)]">
-                Žiadna zhoda v katalógu.
+                Žiadna zhoda — skús iné slovo, alebo pridaj ručne.
               </li>
             ) : (
               filtered.map((d) => (
                 <li key={d.uuid}>
                   <button
                     type="button"
-                    className="flex w-full items-start justify-between gap-3 border-b border-[var(--line)] px-3 py-2.5 text-left hover:bg-[rgba(15,107,92,0.05)]"
+                    className="flex w-full items-start justify-between gap-3 border-b border-[var(--line)] px-3 py-3.5 text-left hover:bg-[rgba(15,107,92,0.05)]"
                     onClick={() => addDevice(d)}
                   >
                     <span>
@@ -207,9 +251,6 @@ export function VyjazdStopsEditor({
               ))
             )}
           </ul>
-          <button type="button" className="btn btn-ghost" onClick={addEmpty}>
-            + Pridať ručne (prázdny riadok)
-          </button>
         </div>
       ) : null}
 
@@ -217,144 +258,146 @@ export function VyjazdStopsEditor({
         {stops.map((stop, index) => {
           const stopUrl = stopNavigationUrl(stop);
           return (
-          <li
-            key={stop.id}
-            className={`rounded-xl border px-3.5 py-3 ${
-              stop.done
-                ? "border-[var(--ok)] bg-[rgba(31,122,69,0.06)]"
-                : "border-[var(--line)] bg-white/70"
-            }`}
-          >
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-display text-sm font-bold text-[var(--teal-deep)]">
-                  {index + 1}.
-                </span>
-                <span className="text-sm font-semibold">
-                  {stop.store || "Nová prevádzka"}
-                </span>
-                {stop.done ? (
-                  <span className="chip chip-ok">Ticknuté</span>
-                ) : null}
-                {stopUrl ? (
-                  <MapsNavLink href={stopUrl}>Navigácia ↗</MapsNavLink>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-1">
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ padding: "0.35rem 0.7rem" }}
-                  onClick={() => moveStop(stop.id, -1)}
-                  disabled={index === 0}
-                  aria-label="Posunúť hore"
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ padding: "0.35rem 0.7rem" }}
-                  onClick={() => moveStop(stop.id, 1)}
-                  disabled={index === stops.length - 1}
-                  aria-label="Posunúť dole"
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{
-                    padding: "0.35rem 0.7rem",
-                    color: "var(--danger)",
-                  }}
-                  onClick={() => removeStop(stop.id)}
-                >
-                  Odstrániť
-                </button>
-              </div>
-            </div>
-
-            {allowTick ? (
-              <label className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                <input
-                  type="checkbox"
-                  checked={stop.done}
-                  disabled={pending}
-                  onChange={(e) => toggleDone(stop, e.target.checked)}
-                />
-                Ticknuté na mieste
-              </label>
-            ) : null}
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="field md:col-span-2">
-                <label htmlFor={`stop-store-${stop.id}`}>
-                  Prevádzka / zákazník *
-                </label>
-                <input
-                  id={`stop-store-${stop.id}`}
-                  value={stop.store}
-                  onChange={(e) => updateStop(stop.id, { store: e.target.value })}
-                  placeholder="Mesto / kód predajne"
-                />
-              </div>
-              <div className="field">
-                <label htmlFor={`stop-address-${stop.id}`}>Adresa</label>
-                <input
-                  id={`stop-address-${stop.id}`}
-                  value={stop.address}
-                  onChange={(e) =>
-                    updateStop(stop.id, { address: e.target.value })
-                  }
-                  placeholder="Ulica, mesto"
-                />
-                {stopUrl ? (
-                  <MapsNavLink href={stopUrl}>Otvoriť v mapách ↗</MapsNavLink>
-                ) : null}
-              </div>
-              <div className="field">
-                <label htmlFor={`stop-phone-${stop.id}`}>Kontakt / telefón</label>
-                <input
-                  id={`stop-phone-${stop.id}`}
-                  value={stop.contactPhone}
-                  onChange={(e) =>
-                    updateStop(stop.id, { contactPhone: e.target.value })
-                  }
-                  placeholder="+421 …"
-                />
-              </div>
-              {stop.deviceUuid ? (
-                <div className="field md:col-span-2">
-                  <label>Naviazané zariadenie</label>
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-white/80 px-3 py-2 text-sm">
-                    <span className="font-mono text-xs">{stop.deviceUuid}</span>
-                    <button
-                      type="button"
-                      className="text-sm font-semibold text-[var(--teal)]"
-                      onClick={() =>
-                        updateStop(stop.id, { deviceUuid: "", ticketId: stop.ticketId })
-                      }
-                    >
-                      Zrušiť väzbu
-                    </button>
-                  </div>
+            <li
+              key={stop.id}
+              className={`rounded-xl border px-3.5 py-3 ${
+                stop.done
+                  ? "border-[var(--ok)] bg-[rgba(31,122,69,0.06)]"
+                  : "border-[var(--line)] bg-white/70"
+              }`}
+            >
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="font-display text-sm font-bold text-[var(--teal-deep)]">
+                    Zastávka {index + 1}
+                  </span>
+                  <span className="text-sm font-semibold">
+                    {stop.store || "Nová prevádzka"}
+                  </span>
+                  {stopUrl ? (
+                    <MapsNavLink href={stopUrl}>Navigácia ↗</MapsNavLink>
+                  ) : null}
                 </div>
-              ) : null}
-              <div className="field md:col-span-2">
-                <label htmlFor={`stop-note-${stop.id}`}>
-                  Poznámka / výsledok zastávky
-                </label>
-                <textarea
-                  id={`stop-note-${stop.id}`}
-                  value={stop.note}
-                  onChange={(e) => updateStop(stop.id, { note: e.target.value })}
-                  placeholder="Čo sa na tejto prevádzke spravilo…"
-                  style={{ minHeight: "4.5rem" }}
-                />
+                <div className="flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-tool"
+                    onClick={() => moveStop(stop.id, -1)}
+                    disabled={index === 0}
+                  >
+                    Hore
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-tool"
+                    onClick={() => moveStop(stop.id, 1)}
+                    disabled={index === stops.length - 1}
+                  >
+                    Dole
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-tool"
+                    style={{ color: "var(--danger)" }}
+                    onClick={() => removeStop(stop.id)}
+                  >
+                    Odstrániť
+                  </button>
+                </div>
               </div>
-            </div>
-          </li>
+
+              {allowTick ? (
+                <button
+                  type="button"
+                  className="tick-bar mb-3"
+                  data-done={stop.done ? "true" : "false"}
+                  disabled={pending}
+                  onClick={() => toggleDone(stop, !stop.done)}
+                >
+                  <span>
+                    {stop.done
+                      ? "Ticknuté — ťukni pre zrušenie"
+                      : "Ticknúť túto prevádzku"}
+                  </span>
+                  <span aria-hidden>{stop.done ? "✓" : ""}</span>
+                </button>
+              ) : null}
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="field md:col-span-2">
+                  <label htmlFor={`stop-store-${stop.id}`}>
+                    Prevádzka / zákazník
+                  </label>
+                  <input
+                    id={`stop-store-${stop.id}`}
+                    value={stop.store}
+                    onChange={(e) =>
+                      updateStop(stop.id, { store: e.target.value })
+                    }
+                    placeholder="Názov predajne, partner, mesto"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor={`stop-address-${stop.id}`}>Adresa</label>
+                  <input
+                    id={`stop-address-${stop.id}`}
+                    value={stop.address}
+                    onChange={(e) =>
+                      updateStop(stop.id, { address: e.target.value })
+                    }
+                    placeholder="Ulica, mesto"
+                  />
+                  {stopUrl ? (
+                    <MapsNavLink href={stopUrl}>Otvoriť v mapách ↗</MapsNavLink>
+                  ) : null}
+                </div>
+                <div className="field">
+                  <label htmlFor={`stop-phone-${stop.id}`}>Kontakt / telefón</label>
+                  <input
+                    id={`stop-phone-${stop.id}`}
+                    value={stop.contactPhone}
+                    onChange={(e) =>
+                      updateStop(stop.id, { contactPhone: e.target.value })
+                    }
+                    placeholder="+421 …"
+                  />
+                </div>
+                {stop.deviceUuid ? (
+                  <div className="field md:col-span-2">
+                    <label>Naviazané zariadenie</label>
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-white/80 px-3 py-2 text-sm">
+                      <span className="font-mono text-xs">{stop.deviceUuid}</span>
+                      <button
+                        type="button"
+                        className="text-sm font-semibold text-[var(--teal)]"
+                        onClick={() =>
+                          updateStop(stop.id, {
+                            deviceUuid: "",
+                            ticketId: stop.ticketId,
+                          })
+                        }
+                      >
+                        Zrušiť väzbu
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="field md:col-span-2">
+                  <label htmlFor={`stop-note-${stop.id}`}>
+                    Poznámka / výsledok zastávky
+                  </label>
+                  <textarea
+                    id={`stop-note-${stop.id}`}
+                    value={stop.note}
+                    onChange={(e) =>
+                      updateStop(stop.id, { note: e.target.value })
+                    }
+                    placeholder="Čo sa na tejto prevádzke spravilo…"
+                    style={{ minHeight: "4.5rem" }}
+                  />
+                </div>
+              </div>
+            </li>
           );
         })}
       </ol>

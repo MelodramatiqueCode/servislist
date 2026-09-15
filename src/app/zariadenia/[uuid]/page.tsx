@@ -178,8 +178,8 @@ export default async function DeviceDetailPage({
             <div className="panel space-y-3 p-5">
               <h2 className="text-lg font-bold">Navrhovaný výjazd</h2>
               <p className="text-sm text-[var(--ink-soft)]">
-                Automatický návrh z aktuálnych signálov — vyber jednu z dvoch
-                možností.
+                Automatický návrh z aktuálnych signálov — expres (táto
+                prevádzka) alebo trasa po okolí, ak dáva zmysel.
               </p>
               <SuggestionCard suggestion={suggestion} compact />
             </div>

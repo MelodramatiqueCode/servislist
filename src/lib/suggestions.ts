@@ -50,6 +50,7 @@ export type VyjazdSuggestion = {
   priority: TicketPriority;
   storeDeviceCount: number;
   stopCount: number;
+  routeTheme: string;
   options: SuggestionOption[];
 };
 
@@ -66,7 +67,30 @@ const PRIORITY_RANK: Record<TicketPriority, number> = {
   urgentna: 3,
 };
 
-const MAX_ROUTE_STOPS = 6;
+const TARGET_ROUTE_STOPS = 4;
+const MAX_ROUTE_STOPS = 5;
+
+const CITY_GROUPS = [
+  [
+    "bratislava",
+    "petrzalka",
+    "ruzinov",
+    "raca",
+    "vrakuna",
+    "dubravka",
+    "lamac",
+    "karlova ves",
+    "nove mesto",
+    "podunajske biskupice",
+    "devinska nova ves",
+    "zahorska bystrica",
+    "jarovce",
+    "rusovce",
+    "cunovo",
+  ],
+  ["kosice", "saca"],
+  ["zilina", "teplicka nad vahom"],
+];
 
 function maxPriority(a: TicketPriority, b: TicketPriority): TicketPriority {
   return PRIORITY_RANK[a] >= PRIORITY_RANK[b] ? a : b;
@@ -126,6 +150,42 @@ function slotLabel(d: Date, now: Date) {
 
 function sameNorm(a: string, b: string) {
   return a.trim().toLowerCase() === b.trim().toLowerCase() && a.trim() !== "";
+}
+
+function foldSk(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function cityGroupId(city: string) {
+  const folded = foldSk(city);
+  if (!folded) return "";
+  for (const group of CITY_GROUPS) {
+    if (
+      group.some(
+        (token) =>
+          folded === token ||
+          folded.startsWith(`${token} `) ||
+          (folded.length >= 5 && token.startsWith(folded)),
+      )
+    ) {
+      return group[0];
+    }
+  }
+  const first = folded.split(" ")[0] ?? "";
+  return first.length >= 4 ? first : folded;
+}
+
+function sameCityArea(a: string, b: string) {
+  if (!a.trim() || !b.trim()) return false;
+  if (sameNorm(a, b)) return true;
+  const ga = cityGroupId(a);
+  const gb = cityGroupId(b);
+  return Boolean(ga && gb && ga === gb);
 }
 
 function uniqueNonEmpty(values: string[]) {
@@ -218,28 +278,78 @@ function stopFromBucket(bucket: PrevadzkaBucket): SuggestionStop {
   return stopFromCandidate(primaryCandidate(bucket));
 }
 
+function relationScore(origin: PrevadzkaBucket, other: PrevadzkaBucket) {
+  const samePartner = sameNorm(origin.partner, other.partner);
+  const sameCity = sameCityArea(origin.city, other.city);
+  if (samePartner && sameCity) return 100;
+  if (sameCity) return 80;
+  if (samePartner) return 35;
+  return 0;
+}
+
+function allowedOnRoute(
+  other: PrevadzkaBucket,
+  score: number,
+) {
+  if (score >= 80) return true;
+  if (score >= 35) {
+    return PRIORITY_RANK[other.priority] >= PRIORITY_RANK.vysoka;
+  }
+  return false;
+}
+
 function relatedRoute(
   origin: PrevadzkaBucket,
   all: PrevadzkaBucket[],
 ): PrevadzkaBucket[] {
-  const related = all.filter((p) => {
-    if (p.key === origin.key) return false;
-    const samePartner = sameNorm(origin.partner, p.partner);
-    const sameCity = sameNorm(origin.city, p.city);
-    return samePartner || sameCity;
-  });
+  const related = all
+    .filter((p) => p.key !== origin.key)
+    .map((p) => ({ bucket: p, score: relationScore(origin, p) }))
+    .filter(({ bucket, score }) => allowedOnRoute(bucket, score));
 
   related.sort((a, b) => {
-    const aSameCity = sameNorm(a.city, origin.city) ? 0 : 1;
-    const bSameCity = sameNorm(b.city, origin.city) ? 0 : 1;
-    if (aSameCity !== bSameCity) return aSameCity - bSameCity;
-    if (PRIORITY_RANK[a.priority] !== PRIORITY_RANK[b.priority]) {
-      return PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority];
+    if (a.score !== b.score) return b.score - a.score;
+    if (PRIORITY_RANK[a.bucket.priority] !== PRIORITY_RANK[b.bucket.priority]) {
+      return (
+        PRIORITY_RANK[b.bucket.priority] - PRIORITY_RANK[a.bucket.priority]
+      );
     }
-    return a.store.localeCompare(b.store, "sk");
+    if (a.bucket.reasons.length !== b.bucket.reasons.length) {
+      return b.bucket.reasons.length - a.bucket.reasons.length;
+    }
+    return a.bucket.store.localeCompare(b.bucket.store, "sk");
   });
 
-  return [origin, ...related].slice(0, MAX_ROUTE_STOPS);
+  const picked: PrevadzkaBucket[] = [origin];
+  for (const { bucket, score } of related) {
+    if (picked.length < TARGET_ROUTE_STOPS) {
+      picked.push(bucket);
+      continue;
+    }
+    if (
+      picked.length < MAX_ROUTE_STOPS &&
+      score >= 80 &&
+      PRIORITY_RANK[bucket.priority] >= PRIORITY_RANK.vysoka
+    ) {
+      picked.push(bucket);
+      break;
+    }
+  }
+
+  return picked;
+}
+
+function routeTheme(route: PrevadzkaBucket[]) {
+  const partners = uniqueNonEmpty(route.map((p) => p.partner));
+  const cities = uniqueNonEmpty(route.map((p) => p.city));
+  if (partners.length === 1 && cities.length === 1) {
+    return `${partners[0]} · ${cities[0]}`;
+  }
+  if (partners.length === 1) return `partner ${partners[0]}`;
+  if (cities.length === 1) return `mesto ${cities[0]}`;
+  const groups = uniqueNonEmpty(route.map((p) => cityGroupId(p.city)));
+  if (groups.length === 1 && groups[0]) return `okolie ${route[0].city || groups[0]}`;
+  return "";
 }
 
 function routeTitle(route: PrevadzkaBucket[]) {
@@ -252,15 +362,11 @@ function routeTitle(route: PrevadzkaBucket[]) {
 }
 
 function routeHint(route: PrevadzkaBucket[]) {
-  const partners = uniqueNonEmpty(route.map((p) => p.partner));
-  const cities = uniqueNonEmpty(route.map((p) => p.city));
-  if (partners.length === 1) {
-    return `Jeden výjazd cez prevádzky ${partners[0]}`;
+  const theme = routeTheme(route);
+  if (theme) {
+    return `Celý okruh (${theme}) — nie len táto prevádzka`;
   }
-  if (cities.length === 1) {
-    return `Jeden výjazd v meste ${cities[0]}`;
-  }
-  return `Jeden výjazd cez ${prevadzkyCountLabel(route.length)}`;
+  return `Celý okruh cez ${prevadzkyCountLabel(route.length)}`;
 }
 
 function buildFocusedDescription(candidate: Candidate, siblings: ServiceDevice[]) {
@@ -330,13 +436,14 @@ function buildOptions(
   bucket: PrevadzkaBucket,
   route: PrevadzkaBucket[],
   now: Date,
+  includeRoute: boolean,
 ): SuggestionOption[] {
   const candidate = primaryCandidate(bucket);
   const siblings = bucket.candidates
     .map((c) => c.device)
     .filter((d): d is ServiceDevice => Boolean(d));
   const multiDevice = siblings.length > 1;
-  const multiStop = route.length > 1;
+  const multiStop = includeRoute && route.length > 1;
   const primaryReason = candidate.reasons[0] ?? "servisný zásah";
   const shortStore = shorten(candidate.store, 40);
   const focusedStop = stopFromCandidate(candidate);
@@ -349,10 +456,12 @@ function buildOptions(
 
   const optionA: SuggestionOption = {
     id: "expres",
-    label: `Expresný výjazd · ${slotLabel(expres, now)}`,
-    hint: multiStop || multiDevice
-      ? "Len táto prevádzka, čo najskôr"
-      : "Vyriešiť čo najskôr",
+    label: `Expresný · len táto prevádzka · ${slotLabel(expres, now)}`,
+    hint: multiStop
+      ? `Iba ${shortStore} — bez ostatných na trase`
+      : multiDevice
+        ? "Len toto zariadenie / táto prevádzka, čo najskôr"
+        : "Vyriešiť čo najskôr",
     scope: "focused",
     title: focusedTitle,
     description: focusedDescription,
@@ -394,7 +503,7 @@ function buildOptions(
       : {
           id: "planovany",
           label: `Plánovaný výjazd · ${slotLabel(planned, now)}`,
-          hint: "Naplánovať na neskôr",
+          hint: "Naplánovať na neskôr, stále jedna prevádzka",
           scope: "focused",
           title: focusedTitle,
           description: focusedDescription,
@@ -619,10 +728,49 @@ export async function listVyjazdSuggestions(opts?: {
   }
 
   const now = new Date();
+  const routeByKey = new Map(
+    uncoveredBuckets.map((bucket) => [
+      bucket.key,
+      relatedRoute(bucket, uncoveredBuckets),
+    ]),
+  );
+
+  const leaderBySignature = new Map<string, string>();
+  for (const bucket of uncoveredBuckets) {
+    const route = routeByKey.get(bucket.key) ?? [bucket];
+    if (route.length < 2) continue;
+    const signature = [...route.map((p) => p.key)].sort().join("|");
+    const currentLeader = leaderBySignature.get(signature);
+    if (!currentLeader) {
+      leaderBySignature.set(signature, bucket.key);
+      continue;
+    }
+    const current = uncoveredBuckets.find((b) => b.key === currentLeader);
+    if (!current) {
+      leaderBySignature.set(signature, bucket.key);
+      continue;
+    }
+    if (PRIORITY_RANK[bucket.priority] > PRIORITY_RANK[current.priority]) {
+      leaderBySignature.set(signature, bucket.key);
+    } else if (
+      bucket.priority === current.priority &&
+      bucket.reasons.length > current.reasons.length
+    ) {
+      leaderBySignature.set(signature, bucket.key);
+    }
+  }
+
+  const forceRoute = Boolean(opts?.deviceUuid || opts?.ticketId);
+
   const suggestions: VyjazdSuggestion[] = displayBuckets.map((bucket) => {
     const candidate = primaryCandidate(bucket);
-    const route = relatedRoute(bucket, uncoveredBuckets);
+    const route = routeByKey.get(bucket.key) ?? [bucket];
+    const signature = [...route.map((p) => p.key)].sort().join("|");
+    const includeRoute =
+      route.length > 1 &&
+      (forceRoute || leaderBySignature.get(signature) === bucket.key);
     const siblings = bucket.candidates.filter((c) => c.deviceUuid);
+    const visibleRoute = includeRoute ? route : [bucket];
     return {
       key: bucket.key,
       store: bucket.store,
@@ -634,8 +782,9 @@ export async function listVyjazdSuggestions(opts?: {
       reasons: bucket.reasons,
       priority: bucket.priority,
       storeDeviceCount: siblings.length,
-      stopCount: route.length,
-      options: buildOptions(bucket, route, now),
+      stopCount: visibleRoute.length,
+      routeTheme: includeRoute ? routeTheme(route) : "",
+      options: buildOptions(bucket, route, now, includeRoute),
     };
   });
 

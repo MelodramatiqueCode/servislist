@@ -258,12 +258,13 @@ export function statusAfterStopProgress(
 ): VyjazdStatus {
   if (current === "zruseny" || stops.length === 0) return current;
   if (allStopsDone(stops)) return "hotovy";
-  const anyDone = stops.some((s) => s.done);
-  if (anyDone && (current === "naplanovany" || current === "hotovy")) {
-    return "prebieha";
-  }
-  if (!anyDone && current === "hotovy") return "prebieha";
+  if (stops.some((s) => s.done)) return "prebieha";
+  if (current === "hotovy") return "prebieha";
   return current;
+}
+
+export function remainingStopCount(stops: VyjazdStop[]) {
+  return Math.max(0, stops.length - doneStopCount(stops));
 }
 
 export function markStopsDone(stops: VyjazdStop[], done: boolean): VyjazdStop[] {

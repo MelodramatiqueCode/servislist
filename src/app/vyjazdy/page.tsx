@@ -126,8 +126,9 @@ export default async function VyjazdyPage({
             <div>
               <h2 className="text-lg font-bold">Automatické návrhy výjazdov</h2>
               <p className="text-sm text-[var(--ink-soft)]">
-                Z otvorených ticketov a Balena alertov. Vyber expresný výjazd
-                na jednu prevádzku, alebo trasu cez viac prevádzok.
+                Z otvorených ticketov a Balena alertov. Expres = jedna
+                prevádzka. Trasa = okruh po rovnakom partnerovi / meste (max 4–5
+                zastávok, najprv priority a alerty).
               </p>
             </div>
             <span className="chip chip-warn">{suggestions.length}</span>

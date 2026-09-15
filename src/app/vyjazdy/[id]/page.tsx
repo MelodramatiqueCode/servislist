@@ -193,6 +193,7 @@ export default async function VyjazdEditorPage({
                 devices={options}
                 vyjazdId={vyjazd.id}
                 allowTick
+                vyjazdStatus={vyjazd.status}
               />
 
               <div className="field md:col-span-2">
@@ -234,8 +235,8 @@ export default async function VyjazdEditorPage({
           <div className="panel space-y-4 p-5">
             <h2 className="text-lg font-bold">Stav výjazdu</h2>
             <p className="text-sm text-[var(--ink-soft)]">
-              Rýchla zmena stavu — naplánovaný → prebieha → hotový. Prvé
-              ticknutie dáva Prebieha, všetky ticknuté dávajú Hotový.
+              Ticknutie na zastávke: prvé → Prebieha, všetky → Hotový.
+              Tlačidlo Hotový označí všetky zastávky ako ticknuté.
             </p>
             <div className="flex flex-col gap-2">
               {STATUSES.map((status) => (
@@ -248,7 +249,9 @@ export default async function VyjazdEditorPage({
                       vyjazd.status === status ? "btn-primary" : "btn-ghost"
                     }`}
                   >
-                    {VYJAZD_STATUS_LABELS[status]}
+                    {status === "hotovy"
+                      ? "Hotový (ticknúť všetky)"
+                      : VYJAZD_STATUS_LABELS[status]}
                   </button>
                 </form>
               ))}

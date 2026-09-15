@@ -156,6 +156,44 @@ h3,
   background: rgba(255, 255, 255, 0.55);
 }
 
+.btn-field {
+  min-height: 3rem;
+  width: 100%;
+  font-size: 1rem;
+}
+
+.btn-tool {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.tick-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.1rem;
+  border-radius: 0.95rem;
+  border: 1px solid var(--line);
+  padding: 0.7rem 0.9rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+.tick-bar[data-done="true"] {
+  background: #e7f6ef;
+  border-color: #bfe3cf;
+  color: var(--ok);
+}
+
+.tick-bar[data-done="false"] {
+  background: var(--teal);
+  color: white;
+  border-color: var(--teal-deep);
+}
+
 .panel {
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(207, 198, 180, 0.85);
