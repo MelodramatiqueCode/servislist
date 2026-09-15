@@ -11,9 +11,11 @@ import {
   isDatabaseConfigured,
 } from "./db";
 import {
-  ALERT_TYPES,
+  ALERT_LABELS,
+  activationNote,
+  alertPriority,
   buildAlertTicket,
-  isAlertActive,
+  detectActiveAlerts,
   isAlertAutoCloseEnabled,
   isAlertsEnabled,
   recoveryNote,
@@ -223,18 +225,33 @@ export type SyncResult = {
 
 const OPEN_STATUSES: TicketStatus[] = ["otvorene", "v_rieseni", "caka_diely"];
 
-function findOpenAlertTicket(
-  store: TicketStore,
-  deviceUuid: string,
-  alertType: AlertType,
-) {
+const ALERT_PRIORITY_RANK: Record<TicketPriority, number> = {
+  nizka: 0,
+  normalna: 1,
+  vysoka: 2,
+  urgentna: 3,
+};
+
+function findOpenAutoTicket(store: TicketStore, deviceUuid: string) {
   return store.tickets.find(
     (t) =>
       t.source === "auto" &&
-      t.alertType === alertType &&
       t.deviceUuid === deviceUuid &&
       OPEN_STATUSES.includes(t.status),
   );
+}
+
+function highestAlert(types: AlertType[]): AlertType {
+  return types.reduce((best, type) =>
+    ALERT_PRIORITY_RANK[alertPriority(type)] >
+    ALERT_PRIORITY_RANK[alertPriority(best)]
+      ? type
+      : best,
+  );
+}
+
+function autoNote(text: string, createdAt: string): TicketNote {
+  return { id: randomUUID(), text, author: "Automat", createdAt };
 }
 
 export async function reconcileDeviceAlerts(
@@ -250,18 +267,31 @@ export async function reconcileDeviceAlerts(
   const autoClose = isAlertAutoCloseEnabled();
   let created = 0;
   let resolved = 0;
+  let dirty = false;
   const timestamp = nowIso();
 
   for (const device of current) {
     const prev = prevMap.get(device.uuid);
 
-    for (const type of ALERT_TYPES) {
-      const nowActive = isAlertActive(device, type);
-      const wasActive = prev ? isAlertActive(prev, type) : false;
-      const open = findOpenAlertTicket(store, device.uuid, type);
+    const activeNow = detectActiveAlerts(device);
+    const activePrev = prev ? detectActiveAlerts(prev) : [];
+    const prevSet = new Set(activePrev);
+    const nowSet = new Set(activeNow);
+    const newlyActive = activeNow.filter((type) => !prevSet.has(type));
+    const newlyCleared = activePrev.filter((type) => !nowSet.has(type));
 
-      if (nowActive && !wasActive && !open) {
-        const input = buildAlertTicket(device, type);
+    if (newlyActive.length === 0 && newlyCleared.length === 0) {
+      continue;
+    }
+
+    let open = findOpenAutoTicket(store, device.uuid);
+
+    // A newly active alert on a device without an open auto-ticket opens ONE
+    // grouped ticket; otherwise we append notes to the existing ticket.
+    if (newlyActive.length > 0) {
+      if (!open) {
+        const primary = highestAlert(newlyActive);
+        const input = buildAlertTicket(device, primary);
         const ticket: Ticket = {
           id: randomUUID(),
           number: store.nextNumber,
@@ -279,32 +309,58 @@ export async function reconcileDeviceAlerts(
           createdAt: timestamp,
           updatedAt: timestamp,
           source: "auto",
-          alertType: type,
+          alertType: primary,
         };
+
+        const others = activeNow.filter((type) => type !== primary);
+        if (others.length > 0) {
+          ticket.notes.push(
+            autoNote(
+              `Pri vytvorení ticketu boli aktívne aj: ${others
+                .map((type) => ALERT_LABELS[type])
+                .join(", ")}.`,
+              timestamp,
+            ),
+          );
+        }
+
         store.nextNumber += 1;
         store.tickets.unshift(ticket);
         created += 1;
-        continue;
-      }
-
-      if (!nowActive && open) {
-        const note: TicketNote = {
-          id: randomUUID(),
-          text: recoveryNote(type, device),
-          author: "Automat",
-          createdAt: timestamp,
-        };
-        open.notes.push(note);
-        open.updatedAt = timestamp;
-        if (autoClose) {
-          open.status = "hotove";
+        dirty = true;
+        open = ticket;
+      } else {
+        for (const type of newlyActive) {
+          open.notes.push(autoNote(activationNote(type, device), timestamp));
+          if (
+            ALERT_PRIORITY_RANK[alertPriority(type)] >
+            ALERT_PRIORITY_RANK[open.priority]
+          ) {
+            open.priority = alertPriority(type);
+            open.alertType = type;
+          }
         }
+        open.updatedAt = timestamp;
+        dirty = true;
+      }
+    }
+
+    // Cleared alerts add a recovery note; the ticket only auto-closes once
+    // NO alert types remain active on the device.
+    if (newlyCleared.length > 0 && open) {
+      for (const type of newlyCleared) {
+        open.notes.push(autoNote(recoveryNote(type, device), timestamp));
         resolved += 1;
       }
+      open.updatedAt = timestamp;
+      if (activeNow.length === 0 && autoClose) {
+        open.status = "hotove";
+      }
+      dirty = true;
     }
   }
 
-  if (created > 0 || resolved > 0) {
+  if (dirty) {
     await writeTicketStore(store);
   }
 
