@@ -46,6 +46,8 @@ import type {
 } from "./types";
 import type { DeviceHealthFilter } from "./parse-device";
 import {
+  buildMergedVyjazdPair,
+  canMergeVyjazdStatus,
   hydrateVyjazd,
   markStopsDone,
   statusAfterStopProgress,
@@ -954,6 +956,41 @@ export async function setVyjazdStopDone(
   vyjazd.updatedAt = nowIso();
   await writeVyjazdStore(store);
   return vyjazd;
+}
+
+/**
+ * Spojí secondary do primary. Pravidlá sú v `buildMergedVyjazdPair`
+ * (zastávky, metadáta, mäkké zrušenie secondary na zruseny).
+ */
+export async function mergeVyjazdy(
+  primaryId: string,
+  secondaryId: string,
+): Promise<Vyjazd> {
+  if (primaryId === secondaryId) {
+    throw new Error("Nie je možné spojiť výjazd so sebou samým.");
+  }
+  const store = await readVyjazdStore();
+  const primary = store.vyjazdy.find((v) => v.id === primaryId);
+  const secondary = store.vyjazdy.find((v) => v.id === secondaryId);
+  if (!primary || !secondary) {
+    throw new Error("Výjazd sa nenašiel.");
+  }
+
+  const pair = buildMergedVyjazdPair(primary, secondary, nowIso());
+  store.vyjazdy = store.vyjazdy.map((v) => {
+    if (v.id === primaryId) return pair.primary;
+    if (v.id === secondaryId) return pair.secondary;
+    return v;
+  });
+  await writeVyjazdStore(store);
+  return pair.primary;
+}
+
+export async function listMergeableVyjazdy(excludeId: string): Promise<Vyjazd[]> {
+  const vyjazdy = await listVyjazdy();
+  return vyjazdy.filter(
+    (v) => v.id !== excludeId && canMergeVyjazdStatus(v.status),
+  );
 }
 
 export async function deleteVyjazd(id: string): Promise<boolean> {

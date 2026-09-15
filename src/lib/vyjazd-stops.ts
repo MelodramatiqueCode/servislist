@@ -1,5 +1,7 @@
+import { vyjazdCode } from "./format";
 import type {
   ServiceDevice,
+  TicketPriority,
   Vyjazd,
   VyjazdStatus,
   VyjazdStop,
@@ -377,4 +379,208 @@ export function routeNavigationUrl(
   const destination = queries[queries.length - 1];
   const waypoints = queries.slice(0, -1);
   return googleMapsDirUrl(destination, waypoints);
+}
+
+const MERGE_PRIORITY_RANK: Record<TicketPriority, number> = {
+  nizka: 0,
+  normalna: 1,
+  vysoka: 2,
+  urgentna: 3,
+};
+
+function foldPlace(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function appendNote(existing: string, note: string) {
+  const base = existing.trim();
+  if (!base) return note;
+  if (base.includes(note)) return base;
+  return `${base}\n${note}`;
+}
+
+export function mergeNarrative(primary: string, secondary: string) {
+  const a = primary.trim();
+  const b = secondary.trim();
+  if (!a) return b;
+  if (!b || a.includes(b)) return a;
+  return `${a}\n\n${b}`;
+}
+
+/** Identity used to drop duplicate stops when merging two výjazdy. */
+export function stopIdentityKey(stop: VyjazdStop): string {
+  return stopIdentityKeys(stop)[0] ?? `id:${stop.id}`;
+}
+
+export function stopIdentityKeys(stop: VyjazdStop): string[] {
+  const keys: string[] = [];
+  const ticket = stop.ticketId.trim();
+  if (ticket) keys.push(`ticket:${ticket}`);
+  const uuid = stop.deviceUuid.trim().toLowerCase();
+  if (uuid) keys.push(`device:${uuid}`);
+  const store = foldPlace(stop.store);
+  const address = foldPlace(stop.address);
+  if (store && address) keys.push(`place:${store}|${address}`);
+  else if (store) keys.push(`store:${store}`);
+  return keys;
+}
+
+function mergeStopPair(kept: VyjazdStop, extra: VyjazdStop): VyjazdStop {
+  const notes = [kept.note, extra.note].map((n) => n.trim()).filter(Boolean);
+  const extraTicket = extra.ticketId.trim();
+  if (extraTicket && extraTicket !== kept.ticketId.trim()) {
+    notes.push(`Ticket ${extraTicket}`);
+  }
+  const extraDevice = extra.deviceUuid.trim();
+  if (
+    extraDevice &&
+    extraDevice.toLowerCase() !== kept.deviceUuid.trim().toLowerCase()
+  ) {
+    notes.push(`UUID ${extraDevice}`);
+  }
+  const uniqueNotes = [...new Set(notes)];
+  return {
+    ...kept,
+    ticketId: kept.ticketId.trim() || extra.ticketId,
+    deviceUuid: kept.deviceUuid.trim() || extra.deviceUuid,
+    store: kept.store.trim() || extra.store,
+    address: kept.address.trim() || extra.address,
+    contactPhone: kept.contactPhone.trim() || extra.contactPhone,
+    done: kept.done || extra.done,
+    note: uniqueNotes.join(" · "),
+  };
+}
+
+/**
+ * Union of two stop lists: primary order first, then secondary.
+ * Duplicates (same ticket, device UUID, or store+address) keep the first
+ * occurrence and merge notes / done / missing contact fields from the later one.
+ * Appended (non-duplicate) stops get new ids so they stay unique on the primary.
+ */
+export function mergeStopLists(
+  primary: VyjazdStop[],
+  secondary: VyjazdStop[],
+): VyjazdStop[] {
+  const out: VyjazdStop[] = [];
+  const indexByKey = new Map<string, number>();
+
+  function register(index: number, stop: VyjazdStop) {
+    for (const key of stopIdentityKeys(stop)) {
+      indexByKey.set(key, index);
+    }
+  }
+
+  function absorb(stop: VyjazdStop, assignNewId: boolean) {
+    const keys = stopIdentityKeys(stop);
+    let existing: number | undefined;
+    for (const key of keys) {
+      const idx = indexByKey.get(key);
+      if (idx !== undefined) {
+        existing = idx;
+        break;
+      }
+    }
+    if (existing !== undefined) {
+      out[existing] = mergeStopPair(out[existing], stop);
+      register(existing, out[existing]);
+      return;
+    }
+    const next = assignNewId ? { ...stop, id: newStopId() } : { ...stop };
+    register(out.length, next);
+    out.push(next);
+  }
+
+  for (const stop of primary) absorb(stop, false);
+  for (const stop of secondary) absorb(stop, true);
+  return out;
+}
+
+export function canMergeVyjazdStatus(status: VyjazdStatus): boolean {
+  return status === "naplanovany" || status === "prebieha";
+}
+
+/** Prefer the primary technician; fall back to the secondary if primary is empty. */
+export function pickMergeTechnician(primary: string, secondary: string): string {
+  return primary.trim() || secondary.trim();
+}
+
+/** Prefer the primary scheduled time; fall back to secondary if primary is empty. */
+export function pickMergeScheduledAt(primary: string, secondary: string): string {
+  return primary.trim() || secondary.trim();
+}
+
+/** Higher of the two priorities (urgentná > vysoká > normálna > nízka). */
+export function pickMergePriority(
+  primary: TicketPriority,
+  secondary: TicketPriority,
+): TicketPriority {
+  return MERGE_PRIORITY_RANK[secondary] > MERGE_PRIORITY_RANK[primary]
+    ? secondary
+    : primary;
+}
+
+/**
+ * Merge policy — primary = výjazd from which merge is started (the one Martin
+ * is on). We do **not** pick the earlier scheduled výjazd as primary; that
+ * would surprise someone who opened V-0003 and chose to absorb V-0001.
+ *
+ * - title / technician / scheduledAt: primary, fallback to secondary if empty
+ * - description: primary, then append secondary if it adds new text
+ * - priority: max(primary, secondary)
+ * - status: prebieha if either was already prebieha, then tick-derived status
+ * - stops: primary order, then secondary; dedupe ticket / device / store+address
+ * - secondary: soft-cancel to zruseny with note „Spojené do V-xxxx“
+ */
+export function buildMergedVyjazdPair(
+  primary: Vyjazd,
+  secondary: Vyjazd,
+  now: string,
+): { primary: Vyjazd; secondary: Vyjazd } {
+  if (primary.id === secondary.id) {
+    throw new Error("Nie je možné spojiť výjazd so sebou samým.");
+  }
+  if (!canMergeVyjazdStatus(primary.status) || !canMergeVyjazdStatus(secondary.status)) {
+    throw new Error("Spojiť sa dajú len naplánované alebo prebiehajúce výjazdy.");
+  }
+
+  const mergedStops = mergeStopLists(primary.stops, secondary.stops);
+  const primaryCode = vyjazdCode(primary.number);
+  const secondaryCode = vyjazdCode(secondary.number);
+  const day = now.slice(0, 10);
+
+  let nextStatus: VyjazdStatus =
+    primary.status === "prebieha" || secondary.status === "prebieha"
+      ? "prebieha"
+      : "naplanovany";
+  nextStatus = statusAfterStopProgress(nextStatus, mergedStops);
+
+  const mergedPrimary = syncLegacyVyjazdFields({
+    ...primary,
+    title: primary.title.trim() || secondary.title,
+    description: mergeNarrative(primary.description, secondary.description),
+    technician: pickMergeTechnician(primary.technician, secondary.technician),
+    scheduledAt: pickMergeScheduledAt(primary.scheduledAt, secondary.scheduledAt),
+    priority: pickMergePriority(primary.priority, secondary.priority),
+    status: nextStatus,
+    stops: mergedStops,
+    result: appendNote(
+      mergeNarrative(primary.result, secondary.result),
+      `Spojené s ${secondaryCode} (${day}).`,
+    ),
+    updatedAt: now,
+  });
+
+  const cancelledSecondary: Vyjazd = {
+    ...secondary,
+    status: "zruseny",
+    result: appendNote(secondary.result, `Spojené do ${primaryCode} (${day}).`),
+    updatedAt: now,
+  };
+
+  return { primary: mergedPrimary, secondary: cancelledSecondary };
 }

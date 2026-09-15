@@ -8,6 +8,7 @@ import {
   createVyjazd,
   deleteVyjazd,
   getDevice,
+  mergeVyjazdy,
   setVyjazdStopDone,
   updateTicketPriority,
   updateTicketStatus,
@@ -251,6 +252,23 @@ export async function toggleVyjazdStopDoneAction(formData: FormData) {
       if (stop.deviceUuid) revalidatePath(`/zariadenia/${stop.deviceUuid}`);
     }
   }
+}
+
+export async function mergeVyjazdAction(formData: FormData) {
+  const primaryId = str(formData, "primaryId") || str(formData, "id");
+  const secondaryId = str(formData, "secondaryId");
+  if (!primaryId || !secondaryId) {
+    throw new Error("Vyber výjazd, ktorý sa má spojiť.");
+  }
+
+  const merged = await mergeVyjazdy(primaryId, secondaryId);
+  revalidatePath("/vyjazdy");
+  revalidatePath(`/vyjazdy/${primaryId}`);
+  revalidatePath(`/vyjazdy/${secondaryId}`);
+  for (const stop of merged.stops) {
+    if (stop.deviceUuid) revalidatePath(`/zariadenia/${stop.deviceUuid}`);
+  }
+  redirect(`/vyjazdy/${primaryId}?merged=1`);
 }
 
 export async function deleteVyjazdAction(formData: FormData) {

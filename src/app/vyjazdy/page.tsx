@@ -14,7 +14,14 @@ import {
   VYJAZD_STATUS_LABELS,
   type VyjazdStatus,
 } from "@/lib/types";
-import { prevadzkyCountLabel, storeSummary, doneStopCount, routeNavigationUrl, stopNavigationUrl } from "@/lib/vyjazd-stops";
+import {
+  canMergeVyjazdStatus,
+  doneStopCount,
+  prevadzkyCountLabel,
+  routeNavigationUrl,
+  stopNavigationUrl,
+  storeSummary,
+} from "@/lib/vyjazd-stops";
 
 type SearchParams = Promise<{
   status?: string;
@@ -238,6 +245,11 @@ export default async function VyjazdyPage({
                       <MapsNavLink href={navUrl} className="chip chip-ok">
                         {routeUrl ? "Navigácia trasy ↗" : "Navigácia ↗"}
                       </MapsNavLink>
+                    ) : null}
+                    {canMergeVyjazdStatus(v.status) ? (
+                      <Link href={`/vyjazdy/${v.id}#spojit`} className="chip chip-warn">
+                        Spojiť
+                      </Link>
                     ) : null}
                   </div>
                 </div>

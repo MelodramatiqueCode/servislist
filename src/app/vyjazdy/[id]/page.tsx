@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { DeleteVyjazdButton } from "@/components/vyjazd-ui";
+import { DeleteVyjazdButton, MergeVyjazdForm } from "@/components/vyjazd-ui";
 import { VyjazdStopsEditor } from "@/components/vyjazd-stops-editor";
 import { MapsNavLink } from "@/components/maps-nav-link";
 import {
@@ -14,7 +14,13 @@ import {
   vyjazdCode,
   vyjazdStatusClass,
 } from "@/lib/format";
-import { getDevice, getTicket, getVyjazd, listDevices } from "@/lib/store";
+import {
+  getDevice,
+  getTicket,
+  getVyjazd,
+  listDevices,
+  listMergeableVyjazdy,
+} from "@/lib/store";
 import {
   PRIORITY_LABELS,
   VYJAZD_STATUS_LABELS,
@@ -23,11 +29,13 @@ import {
 } from "@/lib/types";
 import {
   allStopsDone,
+  canMergeVyjazdStatus,
   deviceStoreLabel,
   doneStopCount,
   prevadzkyCountLabel,
   routeNavigationUrl,
   stopNavigationUrl,
+  storeSummary,
 } from "@/lib/vyjazd-stops";
 
 const STATUSES = Object.keys(VYJAZD_STATUS_LABELS) as VyjazdStatus[];
@@ -48,14 +56,19 @@ export default async function VyjazdEditorPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ saved?: string; merged?: string }>;
 }) {
   const { id } = await params;
-  const { saved } = await searchParams;
+  const { saved, merged } = await searchParams;
   const vyjazd = await getVyjazd(id);
   if (!vyjazd) notFound();
 
-  const devices = await listDevices();
+  const [devices, mergeCandidates] = await Promise.all([
+    listDevices(),
+    canMergeVyjazdStatus(vyjazd.status)
+      ? listMergeableVyjazdy(vyjazd.id)
+      : Promise.resolve([]),
+  ]);
   const options = devices.map((d) => ({
     uuid: d.uuid,
     label: deviceStoreLabel(d) || d.name,
@@ -114,6 +127,11 @@ export default async function VyjazdEditorPage({
               Navigácia ↗
             </MapsNavLink>
           ) : null}
+          {canMergeVyjazdStatus(vyjazd.status) ? (
+            <a href="#spojit" className="chip chip-warn">
+              Spojiť
+            </a>
+          ) : null}
         </div>
         <h1 className="text-3xl font-extrabold leading-tight md:text-4xl">
           {vyjazd.title}
@@ -127,6 +145,9 @@ export default async function VyjazdEditorPage({
             : ""}
         </p>
         {saved ? <p className="chip chip-ok">Zmeny uložené ✓</p> : null}
+        {merged ? (
+          <p className="chip chip-ok">Výjazdy spojené ✓ Druhý ostal zrušený.</p>
+        ) : null}
         {complete && vyjazd.status !== "hotovy" && vyjazd.status !== "zruseny" ? (
           <p className="chip chip-ok">
             Všetky prevádzky sú ticknuté — stav sa nastaví na Hotový.
@@ -308,6 +329,33 @@ export default async function VyjazdEditorPage({
               ) : null,
             )}
           </div>
+
+          {canMergeVyjazdStatus(vyjazd.status) ? (
+            <div id="spojit" className="panel scroll-mt-24 space-y-3 p-5">
+              <h2 className="text-lg font-bold">Spojiť výjazdy</h2>
+              <p className="text-sm text-[var(--ink-soft)]">
+                Tento výjazd je primárny: názov, technik a termín ostanú odtiaľto
+                (prázdne polia sa doplnia z druhého). Zastávky druhého výjazdu sa
+                pridajú na koniec; rovnaké zariadenie, ticket alebo
+                prevádzka+adresa sa zlúčia. Druhý výjazd sa nezmaže — ostane
+                zrušený s poznámkou „Spojené do {vyjazdCode(vyjazd.number)}“.
+                Priorita bude vyššia z oboch.
+              </p>
+              <MergeVyjazdForm
+                primaryId={vyjazd.id}
+                primaryNumber={vyjazd.number}
+                primaryTitle={vyjazd.title}
+                candidates={mergeCandidates.map((candidate) => ({
+                  id: candidate.id,
+                  number: candidate.number,
+                  title: candidate.title,
+                  store: storeSummary(candidate),
+                  status: candidate.status,
+                  stopCount: candidate.stops.length,
+                }))}
+              />
+            </div>
+          ) : null}
 
           <div className="panel space-y-3 p-5">
             <h2 className="text-lg font-bold">Nebezpečná zóna</h2>
