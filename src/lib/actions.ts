@@ -17,6 +17,16 @@ import {
   updateVyjazdStatus,
 } from "./store";
 import { hardwareLabel } from "./parse-device";
+import {
+  deleteDeviceConfigVariables,
+  isBalenaConfigured,
+  upsertDeviceConfigVariables,
+} from "./balena";
+import {
+  COOLING_CONFIG_KEYS,
+  coolingConfigEntries,
+  coolingProfileForDeviceType,
+} from "./cooling";
 import type {
   TicketPriority,
   TicketStatus,
@@ -293,4 +303,65 @@ export async function deleteVyjazdAction(formData: FormData) {
   await deleteVyjazd(id);
   revalidatePath("/vyjazdy");
   redirect("/vyjazdy");
+}
+
+export type CoolingActionState = {
+  ok?: boolean;
+  error?: string;
+  mode?: "on" | "off";
+};
+
+export async function setCoolingModeAction(
+  _prev: CoolingActionState,
+  formData: FormData,
+): Promise<CoolingActionState> {
+  const uuid = str(formData, "uuid");
+  const intent = str(formData, "intent");
+
+  if (!uuid || (intent !== "on" && intent !== "off")) {
+    return { ok: false, error: "Neplatná požiadavka na chladiaci režim." };
+  }
+
+  if (!isBalenaConfigured()) {
+    return { ok: false, error: "Chýba BALENA_API_TOKEN." };
+  }
+
+  const device = await getDevice(uuid);
+  if (!device) {
+    return { ok: false, error: "Zariadenie sa nenašlo." };
+  }
+
+  const profile = coolingProfileForDeviceType(device.deviceType);
+  if (!profile) {
+    return {
+      ok: false,
+      error: "Chladiaci režim je len pre Raspberry Pi 3 a Pi 4.",
+    };
+  }
+
+  if (!device.isOnline) {
+    return {
+      ok: false,
+      error: "Zariadenie je offline — chladiaci režim sa dá zapnúť až keď je online.",
+    };
+  }
+
+  try {
+    if (intent === "on") {
+      await upsertDeviceConfigVariables(
+        device.balenaId,
+        coolingConfigEntries(profile),
+      );
+    } else {
+      await deleteDeviceConfigVariables(device.balenaId, [...COOLING_CONFIG_KEYS]);
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Balena API požiadavka zlyhala.";
+    return { ok: false, error: message };
+  }
+
+  revalidatePath(`/zariadenia/${uuid}`);
+  revalidatePath("/zariadenia");
+  return { ok: true, mode: intent };
 }

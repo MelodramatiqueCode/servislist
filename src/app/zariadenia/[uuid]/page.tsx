@@ -1,13 +1,23 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CoolingPanel } from "@/components/cooling-panel";
+import { SuggestionCard } from "@/components/suggestion-card";
+import { formatDate, statusClass, ticketCode } from "@/lib/format";
+import {
+  isBalenaConfigured,
+  listDeviceConfigVars,
+} from "@/lib/balena";
+import {
+  coolingProfileForDeviceType,
+  hasCoolingOverrides,
+  isCoolingModeActive,
+} from "@/lib/cooling";
 import {
   hardwareLabel,
   hasHealthAlert,
   memoryLabel,
   storageLabel,
 } from "@/lib/parse-device";
-import { SuggestionCard } from "@/components/suggestion-card";
-import { formatDate, statusClass, ticketCode } from "@/lib/format";
 import { ensureFreshBalenaSync, getDevice, listTickets } from "@/lib/store";
 import { listVyjazdSuggestions } from "@/lib/suggestions";
 import { STATUS_LABELS } from "@/lib/types";
@@ -28,6 +38,23 @@ export default async function DeviceDetailPage({
   ]);
   const suggestion = suggestions[0] ?? null;
   const alert = hasHealthAlert(device);
+  const coolingProfile = coolingProfileForDeviceType(device.deviceType);
+  const balenaConfigured = isBalenaConfigured();
+  let coolingActive = false;
+  let coolingHasOverride = false;
+  let coolingLoadError = "";
+  if (coolingProfile && balenaConfigured) {
+    try {
+      const vars = await listDeviceConfigVars(device.balenaId);
+      coolingActive = isCoolingModeActive(vars, coolingProfile);
+      coolingHasOverride = hasCoolingOverrides(vars);
+    } catch (error) {
+      coolingLoadError =
+        error instanceof Error
+          ? error.message
+          : "Stav chladiaceho režimu sa nepodarilo načítať z Baleny.";
+    }
+  }
 
   return (
     <div className="shell max-w-4xl space-y-6">
@@ -55,6 +82,9 @@ export default async function DeviceDetailPage({
           ) : null}
           {alert && device.isOnline && !device.isUndervolted ? (
             <span className="chip prio-vysoka">Pozor na zdravie</span>
+          ) : null}
+          {coolingActive ? (
+            <span className="chip chip-ok">Chladiaci režim</span>
           ) : null}
         </div>
         <h1 className="text-3xl font-extrabold md:text-4xl">
@@ -128,6 +158,21 @@ export default async function DeviceDetailPage({
               <Info label="MAC" value={device.macAddress || "—"} />
             </div>
           </div>
+
+          {coolingProfile ? (
+            <CoolingPanel
+              uuid={device.uuid}
+              cpuTemp={device.cpuTemp}
+              isOnline={device.isOnline}
+              configured={balenaConfigured}
+              profileLabel={coolingProfile.label}
+              armFreq={coolingProfile.armFreq}
+              gpuFreq={coolingProfile.gpuFreq}
+              active={coolingActive}
+              canDisable={coolingHasOverride}
+              loadError={coolingLoadError || undefined}
+            />
+          ) : null}
 
           {device.note ? (
             <div className="note">

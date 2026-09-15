@@ -71,12 +71,16 @@ function expandSlug(
 async function balenaFetch<T>(
   path: string,
   token: string,
+  init?: { method?: string; body?: unknown },
 ): Promise<T> {
+  const method = init?.method ?? "GET";
   const res = await fetch(`${API_BASE}${path}`, {
+    method,
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
+    body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
     cache: "no-store",
   });
 
@@ -87,7 +91,80 @@ async function balenaFetch<T>(
     );
   }
 
-  return res.json() as Promise<T>;
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  if (!text.trim()) return undefined as T;
+  return JSON.parse(text) as T;
+}
+
+function requireBalenaConfig(
+  config: BalenaConfig | null = getBalenaConfig(),
+): BalenaConfig {
+  if (!config?.token) {
+    throw new Error("Chýba BALENA_API_TOKEN.");
+  }
+  return config;
+}
+
+export type BalenaDeviceConfigVar = {
+  id: number;
+  name: string;
+  value: string;
+};
+
+export async function listDeviceConfigVars(
+  deviceId: number,
+  config: BalenaConfig = getBalenaConfig()!,
+): Promise<BalenaDeviceConfigVar[]> {
+  const { token } = requireBalenaConfig(config);
+  const filter = encodeURIComponent(`device eq ${deviceId}`);
+  const data = await balenaFetch<PineList<BalenaDeviceConfigVar>>(
+    `/device_config_variable?$filter=${filter}&$select=id,name,value`,
+    token,
+  );
+  return data?.d ?? [];
+}
+
+export async function upsertDeviceConfigVariables(
+  deviceId: number,
+  entries: Record<string, string>,
+  config: BalenaConfig = getBalenaConfig()!,
+): Promise<void> {
+  const { token } = requireBalenaConfig(config);
+  const existing = await listDeviceConfigVars(deviceId, config);
+
+  for (const [name, value] of Object.entries(entries)) {
+    const row = existing.find((item) => item.name === name);
+    if (row) {
+      if (row.value === value) continue;
+      await balenaFetch(`/device_config_variable(${row.id})`, token, {
+        method: "PATCH",
+        body: { value },
+      });
+    } else {
+      await balenaFetch("/device_config_variable", token, {
+        method: "POST",
+        body: { device: deviceId, name, value },
+      });
+    }
+  }
+}
+
+export async function deleteDeviceConfigVariables(
+  deviceId: number,
+  names: string[],
+  config: BalenaConfig = getBalenaConfig()!,
+): Promise<void> {
+  const { token } = requireBalenaConfig(config);
+  const want = new Set(names);
+  const existing = await listDeviceConfigVars(deviceId, config);
+
+  for (const row of existing) {
+    if (!want.has(row.name)) continue;
+    await balenaFetch(`/device_config_variable(${row.id})`, token, {
+      method: "DELETE",
+    });
+  }
 }
 
 export async function resolveFleetId(
