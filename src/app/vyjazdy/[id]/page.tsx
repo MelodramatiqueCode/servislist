@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DeleteVyjazdButton } from "@/components/vyjazd-ui";
 import { VyjazdStopsEditor } from "@/components/vyjazd-stops-editor";
+import { MapsNavLink } from "@/components/maps-nav-link";
 import {
   updateVyjazdAction,
   updateVyjazdStatusAction,
@@ -25,6 +26,8 @@ import {
   deviceStoreLabel,
   doneStopCount,
   prevadzkyCountLabel,
+  routeNavigationUrl,
+  stopNavigationUrl,
 } from "@/lib/vyjazd-stops";
 
 const STATUSES = Object.keys(VYJAZD_STATUS_LABELS) as VyjazdStatus[];
@@ -76,6 +79,9 @@ export default async function VyjazdEditorPage({
 
   const done = doneStopCount(vyjazd.stops);
   const complete = allStopsDone(vyjazd.stops);
+  const routeUrl = routeNavigationUrl(vyjazd.stops);
+  const singleNavUrl =
+    routeUrl ?? stopNavigationUrl(vyjazd.stops[0] ?? {});
 
   return (
     <div className="shell max-w-4xl space-y-6">
@@ -99,6 +105,15 @@ export default async function VyjazdEditorPage({
           <span className="chip chip-warn">
             {prevadzkyCountLabel(vyjazd.stops.length)}
           </span>
+          {routeUrl ? (
+            <MapsNavLink href={routeUrl} className="btn btn-ghost">
+              Navigácia trasy ↗
+            </MapsNavLink>
+          ) : singleNavUrl ? (
+            <MapsNavLink href={singleNavUrl} className="btn btn-ghost">
+              Navigácia ↗
+            </MapsNavLink>
+          ) : null}
         </div>
         <h1 className="text-3xl font-extrabold leading-tight md:text-4xl">
           {vyjazd.title}

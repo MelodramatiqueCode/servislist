@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MapsNavLink } from "@/components/maps-nav-link";
 import { SuggestionCard } from "@/components/suggestion-card";
 import {
   formatDateTime,
@@ -13,7 +14,7 @@ import {
   VYJAZD_STATUS_LABELS,
   type VyjazdStatus,
 } from "@/lib/types";
-import { prevadzkyCountLabel, storeSummary, doneStopCount } from "@/lib/vyjazd-stops";
+import { prevadzkyCountLabel, storeSummary, doneStopCount, routeNavigationUrl, stopNavigationUrl } from "@/lib/vyjazd-stops";
 
 type SearchParams = Promise<{
   status?: string;
@@ -190,19 +191,22 @@ export default async function VyjazdyPage({
           </div>
         ) : (
           <ul>
-            {vyjazdy.map((v) => (
+            {vyjazdy.map((v) => {
+              const routeUrl = routeNavigationUrl(v.stops);
+              const navUrl = routeUrl ?? stopNavigationUrl(v.stops[0] ?? {});
+              return (
               <li key={v.id}>
-                <Link href={`/vyjazdy/${v.id}`} className="ticket-row">
-                  <div className="min-w-[6rem]">
+                <div className="ticket-row">
+                  <Link href={`/vyjazdy/${v.id}`} className="min-w-[6rem]">
                     <div className="font-display text-sm font-bold text-[var(--teal-deep)]">
                       {vyjazdCode(v.number)}
                     </div>
                     <div className="mt-1 text-xs text-[var(--ink-soft)]">
                       {formatDateTime(v.scheduledAt)}
                     </div>
-                  </div>
+                  </Link>
 
-                  <div className="min-w-0 space-y-1.5">
+                  <Link href={`/vyjazdy/${v.id}`} className="min-w-0 space-y-1.5">
                     <div className="truncate text-lg font-bold">{v.title}</div>
                     <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-[var(--ink-soft)]">
                       <span>{storeSummary(v)}</span>
@@ -217,7 +221,7 @@ export default async function VyjazdyPage({
                       ) : null}
                       <span>Technik: {v.technician}</span>
                     </div>
-                  </div>
+                  </Link>
 
                   <div className="flex flex-wrap gap-2 md:justify-end">
                     {isOverdue(v.status, v.scheduledAt) ? (
@@ -229,10 +233,16 @@ export default async function VyjazdyPage({
                     <span className={`chip ${priorityClass(v.priority)}`}>
                       {PRIORITY_LABELS[v.priority]}
                     </span>
+                    {navUrl ? (
+                      <MapsNavLink href={navUrl} className="chip chip-ok">
+                        {routeUrl ? "Navigácia trasy ↗" : "Navigácia ↗"}
+                      </MapsNavLink>
+                    ) : null}
                   </div>
-                </Link>
+                </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </section>

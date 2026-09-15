@@ -332,3 +332,54 @@ export function stopFromDevice(
     note: extra?.note || "",
   };
 }
+
+export function stopMapsQuery(stop: { store?: string; address?: string }) {
+  const address = (stop.address ?? "").trim();
+  const store = (stop.store ?? "").trim();
+  if (address && store) {
+    if (address.toLowerCase().includes(store.toLowerCase())) return address;
+    return `${address}, ${store}`;
+  }
+  return address || store;
+}
+
+export function googleMapsDirUrl(
+  destination: string,
+  waypoints: string[] = [],
+) {
+  const dest = destination.trim();
+  if (!dest) return null;
+  const params = new URLSearchParams();
+  params.set("api", "1");
+  params.set("destination", dest);
+  params.set("travelmode", "driving");
+  const via = waypoints.map((point) => point.trim()).filter(Boolean);
+  if (via.length > 0) {
+    params.set("waypoints", via.slice(0, 9).join("|"));
+  }
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+export function stopNavigationUrl(stop: { store?: string; address?: string }) {
+  const query = stopMapsQuery(stop);
+  if (!query) return null;
+  return googleMapsDirUrl(query);
+}
+
+export function routeNavigationUrl(
+  stops: Array<{ store?: string; address?: string }>,
+) {
+  const queries = stops
+    .map((stop) => stopMapsQuery(stop))
+    .filter((query): query is string => Boolean(query));
+  if (queries.length < 2) return null;
+  const destination = queries[queries.length - 1];
+  const waypoints = queries.slice(0, -1);
+  return googleMapsDirUrl(destination, waypoints);
+}
+
+export function vyjazdNavigationUrl(
+  stops: Array<{ store?: string; address?: string }>,
+) {
+  return routeNavigationUrl(stops) ?? stopNavigationUrl(stops[0] ?? {});
+}

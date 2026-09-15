@@ -1,12 +1,15 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { MapsNavLink } from "@/components/maps-nav-link";
 import { toggleVyjazdStopDoneAction } from "@/lib/actions";
 import type { VyjazdStop } from "@/lib/types";
 import {
   emptyStop,
   prevadzkyCountLabel,
+  routeNavigationUrl,
   stopFromDevice,
+  stopNavigationUrl,
 } from "@/lib/vyjazd-stops";
 
 export type StopDeviceOption = {
@@ -43,6 +46,7 @@ export function VyjazdStopsEditor({
 
   const primary = stops.find((s) => s.store.trim()) ?? stops[0];
   const doneCount = stops.filter((s) => s.done).length;
+  const routeUrl = routeNavigationUrl(stops);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -146,13 +150,20 @@ export function VyjazdStopsEditor({
               : " · pridaj zastávky trasy, zmeň poradie"}
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-ghost"
-          onClick={() => setAdding((v) => !v)}
-        >
-          {adding ? "Zavrieť výber" : "+ Pridať prevádzku"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {routeUrl ? (
+            <MapsNavLink href={routeUrl} className="btn btn-ghost">
+              Navigácia trasy ↗
+            </MapsNavLink>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setAdding((v) => !v)}
+          >
+            {adding ? "Zavrieť výber" : "+ Pridať prevádzku"}
+          </button>
+        </div>
       </div>
 
       {adding ? (
@@ -203,7 +214,9 @@ export function VyjazdStopsEditor({
       ) : null}
 
       <ol className="space-y-3">
-        {stops.map((stop, index) => (
+        {stops.map((stop, index) => {
+          const stopUrl = stopNavigationUrl(stop);
+          return (
           <li
             key={stop.id}
             className={`rounded-xl border px-3.5 py-3 ${
@@ -222,6 +235,9 @@ export function VyjazdStopsEditor({
                 </span>
                 {stop.done ? (
                   <span className="chip chip-ok">Ticknuté</span>
+                ) : null}
+                {stopUrl ? (
+                  <MapsNavLink href={stopUrl}>Navigácia ↗</MapsNavLink>
                 ) : null}
               </div>
               <div className="flex flex-wrap gap-1">
@@ -293,6 +309,9 @@ export function VyjazdStopsEditor({
                   }
                   placeholder="Ulica, mesto"
                 />
+                {stopUrl ? (
+                  <MapsNavLink href={stopUrl}>Otvoriť v mapách ↗</MapsNavLink>
+                ) : null}
               </div>
               <div className="field">
                 <label htmlFor={`stop-phone-${stop.id}`}>Kontakt / telefón</label>
@@ -336,7 +355,8 @@ export function VyjazdStopsEditor({
               </div>
             </div>
           </li>
-        ))}
+          );
+        })}
       </ol>
     </div>
   );
