@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { DevicePicker } from "@/components/device-ui";
+import { VyjazdStopsEditor } from "@/components/vyjazd-stops-editor";
 import { createVyjazdAction } from "@/lib/actions";
 import { getDevice, getTicket, listDevices } from "@/lib/store";
 import {
@@ -7,6 +7,7 @@ import {
   VYJAZD_STATUS_LABELS,
   type VyjazdStatus,
 } from "@/lib/types";
+import { deviceStoreLabel, stopFromDevice } from "@/lib/vyjazd-stops";
 
 type SearchParams = Promise<{ device?: string; ticket?: string }>;
 
@@ -22,25 +23,46 @@ export default async function NewVyjazdPage({
 
   const options = devices.map((d) => ({
     uuid: d.uuid,
-    label:
-      [d.code && `#${d.code}`, d.partner, d.city || d.name]
-        .filter(Boolean)
-        .join(" · ") || d.name,
+    label: deviceStoreLabel(d) || d.name,
     name: d.name,
     phone: d.phone,
+    address: d.address,
     isOnline: d.isOnline,
     deviceType: d.deviceType,
   }));
 
-  const linkedDeviceUuid = preselected?.uuid ?? ticket?.deviceUuid ?? "";
+  const linkedDevice =
+    preselected ??
+    (ticket?.deviceUuid
+      ? (devices.find((d) => d.uuid === ticket.deviceUuid) ?? null)
+      : null);
 
-  const defaultStore = preselected
-    ? [preselected.code && `#${preselected.code}`, preselected.partner, preselected.city]
-        .filter(Boolean)
-        .join(" · ") || preselected.name
-    : ticket?.customerName ?? "";
-  const defaultAddress = preselected?.address ?? "";
-  const defaultPhone = preselected?.phone ?? ticket?.customerPhone ?? "";
+  const initialStops = linkedDevice
+    ? [
+        stopFromDevice(linkedDevice, {
+          ticketId: ticket?.id ?? "",
+          store:
+            deviceStoreLabel(linkedDevice) ||
+            ticket?.customerName ||
+            linkedDevice.name,
+          contactPhone: linkedDevice.phone || ticket?.customerPhone || "",
+        }),
+      ]
+    : ticket
+      ? [
+          {
+            id: `ticket-${ticket.id}`,
+            store: ticket.customerName || "Zákazník",
+            address: "",
+            contactPhone: ticket.customerPhone || "",
+            deviceUuid: ticket.deviceUuid || "",
+            ticketId: ticket.id,
+            done: false,
+            note: "",
+          },
+        ]
+      : [];
+
   const defaultTitle = ticket ? `Výjazd k ticketu: ${ticket.title}` : "";
   const defaultDescription = ticket ? ticket.description : "";
 
@@ -57,8 +79,8 @@ export default async function NewVyjazdPage({
         </Link>
         <h1 className="text-3xl font-extrabold md:text-4xl">Nový výjazd</h1>
         <p className="text-[var(--ink-soft)]">
-          Naplánuj servisný výjazd k predajni. Zariadenie z Balena flotily je
-          voliteľné.
+          Naplánuj servisný výjazd ako trasu — pridaj prevádzky z katalógu,
+          uprav poradie a na detaile ich odtickuj.
         </p>
       </div>
 
@@ -67,12 +89,7 @@ export default async function NewVyjazdPage({
         className="panel fade-up space-y-5 p-5 md:p-7"
         style={{ animationDelay: "80ms" }}
       >
-        {ticket ? (
-          <input type="hidden" name="ticketId" value={ticket.id} />
-        ) : null}
         <div className="grid gap-4 md:grid-cols-2">
-          <DevicePicker devices={options} selectedUuid={linkedDeviceUuid} />
-
           <div className="field md:col-span-2">
             <label htmlFor="title">Názov výjazdu *</label>
             <input
@@ -80,28 +97,7 @@ export default async function NewVyjazdPage({
               name="title"
               required
               defaultValue={defaultTitle}
-              placeholder="napr. Výmena zdroja / servis Pi na predajni"
-            />
-          </div>
-
-          <div className="field">
-            <label htmlFor="store">Predajňa / zákazník *</label>
-            <input
-              id="store"
-              name="store"
-              required
-              defaultValue={defaultStore}
-              placeholder="Mesto / kód predajne"
-            />
-          </div>
-
-          <div className="field">
-            <label htmlFor="address">Adresa</label>
-            <input
-              id="address"
-              name="address"
-              defaultValue={defaultAddress}
-              placeholder="Ulica, mesto"
+              placeholder="napr. Výmena zdroja / trasa po predajniach"
             />
           </div>
 
@@ -111,16 +107,6 @@ export default async function NewVyjazdPage({
               id="technician"
               name="technician"
               placeholder="napr. Peter"
-            />
-          </div>
-
-          <div className="field">
-            <label htmlFor="contactPhone">Kontakt / telefón</label>
-            <input
-              id="contactPhone"
-              name="contactPhone"
-              defaultValue={defaultPhone}
-              placeholder="+421 …"
             />
           </div>
 
@@ -154,6 +140,8 @@ export default async function NewVyjazdPage({
               ))}
             </select>
           </div>
+
+          <VyjazdStopsEditor initialStops={initialStops} devices={options} />
 
           <div className="field md:col-span-2">
             <label htmlFor="description">Čo treba spraviť</label>

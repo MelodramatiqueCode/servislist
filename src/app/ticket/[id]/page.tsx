@@ -200,7 +200,8 @@ export default async function TicketDetailPage({
             {suggestion ? (
               <>
                 <p className="text-sm text-[var(--ink-soft)]">
-                  Automatický návrh výjazdu — vyber expresný alebo plánovaný.
+                  Automatický návrh výjazdu — expres (táto prevádzka) alebo
+                  trasa, ak sú v okolí ďalšie signály.
                 </p>
                 <SuggestionCard suggestion={suggestion} compact />
                 <Link

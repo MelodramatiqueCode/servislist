@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { DevicePicker } from "@/components/device-ui";
-import { DeleteVyjazdButton } from "@/components/vyjazd-ui";
+import { DeleteVyjazdButton, MergeVyjazdForm } from "@/components/vyjazd-ui";
+import { VyjazdStopsEditor } from "@/components/vyjazd-stops-editor";
+import { MapsNavLink } from "@/components/maps-nav-link";
 import {
   updateVyjazdAction,
   updateVyjazdStatusAction,
+  recalcVyjazdRouteAction,
 } from "@/lib/actions";
 import {
   formatDate,
@@ -13,13 +15,35 @@ import {
   vyjazdCode,
   vyjazdStatusClass,
 } from "@/lib/format";
-import { getDevice, getTicket, getVyjazd, listDevices } from "@/lib/store";
+import {
+  getDevice,
+  getTicket,
+  getVyjazd,
+  listDevices,
+  listMergeableVyjazdy,
+} from "@/lib/store";
 import {
   PRIORITY_LABELS,
   VYJAZD_STATUS_LABELS,
   type TicketPriority,
   type VyjazdStatus,
 } from "@/lib/types";
+import {
+  liveRouteError,
+  liveRouteLabel,
+  mappedRoutePointCount,
+} from "@/lib/route-estimate";
+import {
+  allStopsDone,
+  canMergeVyjazdStatus,
+  deviceStoreLabel,
+  doneStopCount,
+  originQuery,
+  prevadzkyCountLabel,
+  routeNavigationUrl,
+  stopNavigationUrl,
+  storeSummary,
+} from "@/lib/vyjazd-stops";
 
 const STATUSES = Object.keys(VYJAZD_STATUS_LABELS) as VyjazdStatus[];
 const PRIORITIES = Object.keys(PRIORITY_LABELS) as TicketPriority[];
@@ -39,30 +63,49 @@ export default async function VyjazdEditorPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ saved?: string; merged?: string; routed?: string }>;
 }) {
   const { id } = await params;
-  const { saved } = await searchParams;
+  const { saved, merged, routed } = await searchParams;
   const vyjazd = await getVyjazd(id);
   if (!vyjazd) notFound();
 
-  const [linkedDevice, linkedTicket, devices] = await Promise.all([
-    vyjazd.deviceUuid ? getDevice(vyjazd.deviceUuid) : Promise.resolve(null),
-    vyjazd.ticketId ? getTicket(vyjazd.ticketId) : Promise.resolve(null),
+  const [devices, mergeCandidates] = await Promise.all([
     listDevices(),
+    canMergeVyjazdStatus(vyjazd.status)
+      ? listMergeableVyjazdy(vyjazd.id)
+      : Promise.resolve([]),
   ]);
-
   const options = devices.map((d) => ({
     uuid: d.uuid,
-    label:
-      [d.code && `#${d.code}`, d.partner, d.city || d.name]
-        .filter(Boolean)
-        .join(" · ") || d.name,
+    label: deviceStoreLabel(d) || d.name,
     name: d.name,
     phone: d.phone,
+    address: d.address,
     isOnline: d.isOnline,
     deviceType: d.deviceType,
   }));
+
+  const linkedDevices = await Promise.all(
+    [...new Set(vyjazd.stops.map((s) => s.deviceUuid).filter(Boolean))].map(
+      (uuid) => getDevice(uuid),
+    ),
+  );
+  const linkedTickets = await Promise.all(
+    [...new Set(vyjazd.stops.map((s) => s.ticketId).filter(Boolean))].map(
+      (ticketId) => getTicket(ticketId),
+    ),
+  );
+
+  const done = doneStopCount(vyjazd.stops);
+  const complete = allStopsDone(vyjazd.stops);
+  const routeUrl = routeNavigationUrl(vyjazd.stops, vyjazd);
+  const singleNavUrl =
+    routeUrl ?? stopNavigationUrl(vyjazd.stops[0] ?? {});
+  const routeLabel = liveRouteLabel(vyjazd);
+  const routeError = liveRouteError(vyjazd);
+  const canEstimateRoute = mappedRoutePointCount(vyjazd.stops, vyjazd) >= 2;
+  const originText = originQuery(vyjazd);
 
   return (
     <div className="shell max-w-4xl space-y-6">
@@ -83,7 +126,53 @@ export default async function VyjazdEditorPage({
           <span className={`chip ${priorityClass(vyjazd.priority)}`}>
             {PRIORITY_LABELS[vyjazd.priority]}
           </span>
+          <span className="chip chip-warn">
+            {prevadzkyCountLabel(vyjazd.stops.length)}
+          </span>
+          {routeUrl ? (
+            <MapsNavLink href={routeUrl} className="btn btn-ghost">
+              Navigácia trasy ↗
+            </MapsNavLink>
+          ) : singleNavUrl ? (
+            <MapsNavLink href={singleNavUrl} className="btn btn-ghost">
+              Navigácia ↗
+            </MapsNavLink>
+          ) : null}
+          {canMergeVyjazdStatus(vyjazd.status) ? (
+            <a href="#spojit" className="chip chip-warn">
+              Spojiť
+            </a>
+          ) : null}
         </div>
+        {canEstimateRoute ? (
+          <div className="flex flex-wrap items-center gap-3">
+            {routeLabel ? (
+              <p className="text-base font-semibold text-[var(--ink)]">
+                {routeLabel}
+              </p>
+            ) : routeError ? (
+              <p className="text-sm text-[var(--danger)]">{routeError}</p>
+            ) : (
+              <p className="text-sm text-[var(--ink-soft)]">
+                Odhad km / času sa spočíta po uložení alebo prepočte trasy.
+              </p>
+            )}
+            <form action={recalcVyjazdRouteAction}>
+              <input type="hidden" name="id" value={vyjazd.id} />
+              <button type="submit" className="btn btn-ghost">
+                Prepočítať trasu
+              </button>
+            </form>
+            <p className="text-xs text-[var(--ink-soft)]">
+              Približne, podľa OpenStreetMap (Nominatim + OSRM).
+            </p>
+          </div>
+        ) : vyjazd.stops.length > 0 ? (
+          <p className="text-sm text-[var(--ink-soft)]">
+            Doplň výstupný bod alebo aspoň dve adresy zastávok, aby sa dala
+            spočítať vzdialenosť a čas.
+          </p>
+        ) : null}
         <h1 className="text-3xl font-extrabold leading-tight md:text-4xl">
           {vyjazd.title}
         </h1>
@@ -91,9 +180,28 @@ export default async function VyjazdEditorPage({
           Vytvorené {formatDate(vyjazd.createdAt)} · Aktualizované{" "}
           {formatDate(vyjazd.updatedAt)} · Termín{" "}
           {formatDateTime(vyjazd.scheduledAt)}
+          {vyjazd.stops.length > 0
+            ? ` · Ticknuté ${done} / ${vyjazd.stops.length}`
+            : ""}
+          {originText
+            ? ` · Z: ${vyjazd.originLabel || originText}`
+            : ""}
         </p>
-        {saved ? (
-          <p className="chip chip-ok">Zmeny uložené ✓</p>
+        {saved ? <p className="chip chip-ok">Zmeny uložené ✓</p> : null}
+        {merged ? (
+          <p className="chip chip-ok">Výjazdy spojené ✓ Druhý ostal zrušený.</p>
+        ) : null}
+        {routed ? (
+          <p className="chip chip-ok">
+            {routeLabel
+              ? `Trasa prepočítaná ✓ ${routeLabel.replace(/^Trasa\s+/, "")}`
+              : routeError || "Trasa prepočítaná."}
+          </p>
+        ) : null}
+        {complete && vyjazd.status !== "hotovy" && vyjazd.status !== "zruseny" ? (
+          <p className="chip chip-ok">
+            Všetky prevádzky sú ticknuté — stav sa nastaví na Hotový.
+          </p>
         ) : null}
       </div>
 
@@ -105,12 +213,8 @@ export default async function VyjazdEditorPage({
           <h2 className="text-lg font-bold">Editor výjazdu</h2>
           <form action={updateVyjazdAction} className="space-y-4">
             <input type="hidden" name="id" value={vyjazd.id} />
-            <input type="hidden" name="ticketId" value={vyjazd.ticketId} />
-            <input type="hidden" name="status" value={vyjazd.status} />
 
             <div className="grid gap-4 md:grid-cols-2">
-              <DevicePicker devices={options} selectedUuid={vyjazd.deviceUuid} />
-
               <div className="field md:col-span-2">
                 <label htmlFor="title">Názov výjazdu *</label>
                 <input
@@ -122,39 +226,11 @@ export default async function VyjazdEditorPage({
               </div>
 
               <div className="field">
-                <label htmlFor="store">Predajňa / zákazník *</label>
-                <input
-                  id="store"
-                  name="store"
-                  required
-                  defaultValue={vyjazd.store}
-                />
-              </div>
-
-              <div className="field">
-                <label htmlFor="address">Adresa</label>
-                <input
-                  id="address"
-                  name="address"
-                  defaultValue={vyjazd.address}
-                />
-              </div>
-
-              <div className="field">
                 <label htmlFor="technician">Technik</label>
                 <input
                   id="technician"
                   name="technician"
                   defaultValue={vyjazd.technician}
-                />
-              </div>
-
-              <div className="field">
-                <label htmlFor="contactPhone">Kontakt / telefón</label>
-                <input
-                  id="contactPhone"
-                  name="contactPhone"
-                  defaultValue={vyjazd.contactPhone}
                 />
               </div>
 
@@ -183,6 +259,18 @@ export default async function VyjazdEditorPage({
                 </select>
               </div>
 
+              <VyjazdStopsEditor
+                initialStops={vyjazd.stops}
+                devices={options}
+                vyjazdId={vyjazd.id}
+                allowTick
+                vyjazdStatus={vyjazd.status}
+                initialOrigin={{
+                  label: vyjazd.originLabel,
+                  address: vyjazd.originAddress,
+                }}
+              />
+
               <div className="field md:col-span-2">
                 <label htmlFor="description">Čo treba spraviť</label>
                 <textarea
@@ -194,12 +282,12 @@ export default async function VyjazdEditorPage({
               </div>
 
               <div className="field md:col-span-2">
-                <label htmlFor="result">Výsledok výjazdu</label>
+                <label htmlFor="result">Súhrnný výsledok výjazdu</label>
                 <textarea
                   id="result"
                   name="result"
                   defaultValue={vyjazd.result}
-                  placeholder="Čo sa na mieste spravilo, čo ešte treba…"
+                  placeholder="Čo sa na trase spravilo, čo ešte treba…"
                 />
               </div>
             </div>
@@ -222,7 +310,8 @@ export default async function VyjazdEditorPage({
           <div className="panel space-y-4 p-5">
             <h2 className="text-lg font-bold">Stav výjazdu</h2>
             <p className="text-sm text-[var(--ink-soft)]">
-              Rýchla zmena stavu — naplánovaný → prebieha → hotový.
+              Ticknutie na zastávke: prvé → Prebieha, všetky → Hotový.
+              Tlačidlo Hotový označí všetky zastávky ako ticknuté.
             </p>
             <div className="flex flex-col gap-2">
               {STATUSES.map((status) => (
@@ -235,7 +324,9 @@ export default async function VyjazdEditorPage({
                       vyjazd.status === status ? "btn-primary" : "btn-ghost"
                     }`}
                   >
-                    {VYJAZD_STATUS_LABELS[status]}
+                    {status === "hotovy"
+                      ? "Hotový (ticknúť všetky)"
+                      : VYJAZD_STATUS_LABELS[status]}
                   </button>
                 </form>
               ))}
@@ -244,43 +335,81 @@ export default async function VyjazdEditorPage({
 
           <div className="panel space-y-3 p-5">
             <h2 className="text-lg font-bold">Odkazy</h2>
-            {linkedDevice ? (
-              <div className="rounded-xl border border-[var(--line)] bg-white/60 px-3.5 py-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
-                  Balena zariadenie
-                </div>
-                <div className="mt-1 font-semibold">{linkedDevice.name}</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Link
-                    href={`/zariadenia/${linkedDevice.uuid}`}
-                    className="btn btn-ghost"
-                  >
-                    Detail zariadenia
-                  </Link>
-                  <a
-                    href={linkedDevice.dashboardUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-ghost"
-                  >
-                    Balena ↗
-                  </a>
-                </div>
-              </div>
-            ) : (
+            {linkedDevices.filter(Boolean).length === 0 ? (
               <p className="text-sm text-[var(--ink-soft)]">
-                Bez naviazaného zariadenia. Vyber ho v editore vľavo.
+                Bez naviazaného zariadenia. Pridaj prevádzku z katalógu v
+                editore.
               </p>
+            ) : (
+              linkedDevices.map((linkedDevice) =>
+                linkedDevice ? (
+                  <div
+                    key={linkedDevice.uuid}
+                    className="rounded-xl border border-[var(--line)] bg-white/60 px-3.5 py-3"
+                  >
+                    <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
+                      Balena zariadenie
+                    </div>
+                    <div className="mt-1 font-semibold">{linkedDevice.name}</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Link
+                        href={`/zariadenia/${linkedDevice.uuid}`}
+                        className="btn btn-ghost"
+                      >
+                        Detail zariadenia
+                      </Link>
+                      <a
+                        href={linkedDevice.dashboardUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-ghost"
+                      >
+                        Balena ↗
+                      </a>
+                    </div>
+                  </div>
+                ) : null,
+              )
             )}
-            {linkedTicket ? (
-              <Link
-                href={`/ticket/${linkedTicket.id}`}
-                className="btn btn-ghost w-full"
-              >
-                Súvisiaci ticket ↗
-              </Link>
-            ) : null}
+            {linkedTickets.map((linkedTicket) =>
+              linkedTicket ? (
+                <Link
+                  key={linkedTicket.id}
+                  href={`/ticket/${linkedTicket.id}`}
+                  className="btn btn-ghost w-full"
+                >
+                  Ticket {linkedTicket.title} ↗
+                </Link>
+              ) : null,
+            )}
           </div>
+
+          {canMergeVyjazdStatus(vyjazd.status) ? (
+            <div id="spojit" className="panel scroll-mt-24 space-y-3 p-5">
+              <h2 className="text-lg font-bold">Spojiť výjazdy</h2>
+              <p className="text-sm text-[var(--ink-soft)]">
+                Tento výjazd je primárny: názov, technik a termín ostanú odtiaľto
+                (prázdne polia sa doplnia z druhého). Zastávky druhého výjazdu sa
+                pridajú na koniec; rovnaké zariadenie, ticket alebo
+                prevádzka+adresa sa zlúčia. Druhý výjazd sa nezmaže — ostane
+                zrušený s poznámkou „Spojené do {vyjazdCode(vyjazd.number)}“.
+                Priorita bude vyššia z oboch.
+              </p>
+              <MergeVyjazdForm
+                primaryId={vyjazd.id}
+                primaryNumber={vyjazd.number}
+                primaryTitle={vyjazd.title}
+                candidates={mergeCandidates.map((candidate) => ({
+                  id: candidate.id,
+                  number: candidate.number,
+                  title: candidate.title,
+                  store: storeSummary(candidate),
+                  status: candidate.status,
+                  stopCount: candidate.stops.length,
+                }))}
+              />
+            </div>
+          ) : null}
 
           <div className="panel space-y-3 p-5">
             <h2 className="text-lg font-bold">Nebezpečná zóna</h2>

@@ -45,6 +45,17 @@ import type {
   VyjazdStore,
 } from "./types";
 import type { DeviceHealthFilter } from "./parse-device";
+import {
+  buildMergedVyjazdPair,
+  canMergeVyjazdStatus,
+  hydrateVyjazd,
+  markStopsDone,
+  statusAfterStopProgress,
+  stopsFromInput,
+  syncLegacyVyjazdFields,
+  vyjazdCoversDevice,
+} from "./vyjazd-stops";
+import { estimateDrivingRoute, routeFingerprint } from "./route-estimate";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const TICKETS_FILE = path.join(DATA_DIR, "tickets.json");
@@ -732,28 +743,6 @@ function seedVyjazdy(): VyjazdStore {
   };
 }
 
-function hydrateVyjazd(
-  v: Partial<Vyjazd> & Pick<Vyjazd, "id" | "number" | "title">,
-): Vyjazd {
-  return {
-    id: v.id,
-    number: v.number,
-    title: v.title,
-    store: v.store ?? "",
-    address: v.address ?? "",
-    contactPhone: v.contactPhone ?? "",
-    technician: v.technician ?? "",
-    scheduledAt: v.scheduledAt ?? "",
-    status: v.status ?? "naplanovany",
-    priority: v.priority ?? "normalna",
-    deviceUuid: v.deviceUuid ?? "",
-    ticketId: v.ticketId ?? "",
-    description: v.description ?? "",
-    result: v.result ?? "",
-    createdAt: v.createdAt ?? nowIso(),
-    updatedAt: v.updatedAt ?? nowIso(),
-  };
-}
 
 async function ensureVyjazdyFile() {
   await ensureDir();
@@ -770,12 +759,14 @@ async function ensureVyjazdyFile() {
 
 async function readVyjazdStore(): Promise<VyjazdStore> {
   if (isDatabaseConfigured()) {
-    return dbReadVyjazdStore();
+    const store = await dbReadVyjazdStore();
+    store.vyjazdy = (store.vyjazdy ?? []).map((v) => hydrateVyjazd(v));
+    return store;
   }
   await ensureVyjazdyFile();
   const raw = await fs.readFile(VYJAZDY_FILE, "utf8");
   const store = JSON.parse(raw) as VyjazdStore;
-  store.vyjazdy = (store.vyjazdy ?? []).map(hydrateVyjazd);
+  store.vyjazdy = (store.vyjazdy ?? []).map((v) => hydrateVyjazd(v));
   return store;
 }
 
@@ -819,7 +810,7 @@ export async function listVyjazdy(filters?: {
   }
 
   if (filters?.deviceUuid) {
-    vyjazdy = vyjazdy.filter((v) => v.deviceUuid === filters.deviceUuid);
+    vyjazdy = vyjazdy.filter((v) => vyjazdCoversDevice(v, filters.deviceUuid!));
   }
 
   if (filters?.q?.trim()) {
@@ -835,6 +826,13 @@ export async function listVyjazdy(filters?: {
         v.result,
         v.deviceUuid,
         String(v.number),
+        ...(v.stops ?? []).flatMap((s) => [
+          s.store,
+          s.address,
+          s.contactPhone,
+          s.deviceUuid,
+          s.note,
+        ]),
       ]
         .join(" ")
         .toLowerCase();
@@ -853,7 +851,8 @@ export async function getVyjazd(id: string): Promise<Vyjazd | null> {
 export async function createVyjazd(input: CreateVyjazdInput): Promise<Vyjazd> {
   const store = await readVyjazdStore();
   const timestamp = nowIso();
-  const vyjazd: Vyjazd = {
+  const stops = stopsFromInput(input);
+  const vyjazd: Vyjazd = syncLegacyVyjazdFields({
     id: randomUUID(),
     number: store.nextNumber,
     title: input.title.trim(),
@@ -868,9 +867,14 @@ export async function createVyjazd(input: CreateVyjazdInput): Promise<Vyjazd> {
     ticketId: (input.ticketId ?? "").trim(),
     description: (input.description ?? "").trim(),
     result: (input.result ?? "").trim(),
+    stops,
+    route: null,
+    originLabel: (input.originLabel ?? "").trim(),
+    originAddress: (input.originAddress ?? "").trim(),
     createdAt: timestamp,
     updatedAt: timestamp,
-  };
+  });
+  vyjazd.route = await estimateDrivingRoute(vyjazd.stops, vyjazd);
 
   store.nextNumber += 1;
   store.vyjazdy.unshift(vyjazd);
@@ -881,10 +885,12 @@ export async function createVyjazd(input: CreateVyjazdInput): Promise<Vyjazd> {
 export async function updateVyjazd(
   id: string,
   patch: UpdateVyjazdInput,
+  opts?: { syncStatusFromStops?: boolean; forceRoute?: boolean },
 ): Promise<Vyjazd | null> {
   const store = await readVyjazdStore();
   const vyjazd = store.vyjazdy.find((v) => v.id === id);
   if (!vyjazd) return null;
+  const previousFingerprint = vyjazd.route?.fingerprint ?? "";
 
   const fields: (keyof UpdateVyjazdInput)[] = [
     "title",
@@ -899,6 +905,8 @@ export async function updateVyjazd(
     "ticketId",
     "description",
     "result",
+    "originLabel",
+    "originAddress",
   ];
 
   for (const key of fields) {
@@ -911,6 +919,25 @@ export async function updateVyjazd(
     }
   }
 
+  if (patch.stops) {
+    vyjazd.stops = stopsFromInput({ stops: patch.stops });
+  } else if (!vyjazd.stops) {
+    vyjazd.stops = [];
+  }
+
+  if (patch.status === "hotovy") {
+    vyjazd.stops = markStopsDone(vyjazd.stops, true);
+  }
+
+  if (opts?.syncStatusFromStops) {
+    vyjazd.status = statusAfterStopProgress(vyjazd.status, vyjazd.stops);
+  }
+
+  syncLegacyVyjazdFields(vyjazd);
+  const nextFingerprint = routeFingerprint(vyjazd.stops, vyjazd);
+  if (opts?.forceRoute || nextFingerprint !== previousFingerprint) {
+    vyjazd.route = await estimateDrivingRoute(vyjazd.stops, vyjazd);
+  }
   vyjazd.updatedAt = nowIso();
   await writeVyjazdStore(store);
   return vyjazd;
@@ -921,6 +948,69 @@ export async function updateVyjazdStatus(
   status: VyjazdStatus,
 ): Promise<Vyjazd | null> {
   return updateVyjazd(id, { status });
+}
+
+export async function setVyjazdStopDone(
+  id: string,
+  stopId: string,
+  done: boolean,
+): Promise<Vyjazd | null> {
+  const store = await readVyjazdStore();
+  const vyjazd = store.vyjazdy.find((v) => v.id === id);
+  if (!vyjazd) return null;
+
+  const stop = vyjazd.stops.find((s) => s.id === stopId);
+  if (!stop) return null;
+
+  stop.done = done;
+  vyjazd.status = statusAfterStopProgress(vyjazd.status, vyjazd.stops);
+  syncLegacyVyjazdFields(vyjazd);
+  vyjazd.updatedAt = nowIso();
+  await writeVyjazdStore(store);
+  return vyjazd;
+}
+
+/**
+ * Spojí secondary do primary. Pravidlá sú v `buildMergedVyjazdPair`
+ * (zastávky, metadáta, mäkké zrušenie secondary na zruseny).
+ */
+export async function mergeVyjazdy(
+  primaryId: string,
+  secondaryId: string,
+): Promise<Vyjazd> {
+  if (primaryId === secondaryId) {
+    throw new Error("Nie je možné spojiť výjazd so sebou samým.");
+  }
+  const store = await readVyjazdStore();
+  const primary = store.vyjazdy.find((v) => v.id === primaryId);
+  const secondary = store.vyjazdy.find((v) => v.id === secondaryId);
+  if (!primary || !secondary) {
+    throw new Error("Výjazd sa nenašiel.");
+  }
+
+  const pair = buildMergedVyjazdPair(primary, secondary, nowIso());
+  pair.primary.route = await estimateDrivingRoute(
+    pair.primary.stops,
+    pair.primary,
+  );
+  store.vyjazdy = store.vyjazdy.map((v) => {
+    if (v.id === primaryId) return pair.primary;
+    if (v.id === secondaryId) return pair.secondary;
+    return v;
+  });
+  await writeVyjazdStore(store);
+  return pair.primary;
+}
+
+export async function refreshVyjazdRoute(id: string): Promise<Vyjazd | null> {
+  return updateVyjazd(id, {}, { forceRoute: true });
+}
+
+export async function listMergeableVyjazdy(excludeId: string): Promise<Vyjazd[]> {
+  const vyjazdy = await listVyjazdy();
+  return vyjazdy.filter(
+    (v) => v.id !== excludeId && canMergeVyjazdStatus(v.status),
+  );
 }
 
 export async function deleteVyjazd(id: string): Promise<boolean> {

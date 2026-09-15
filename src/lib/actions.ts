@@ -8,6 +8,9 @@ import {
   createVyjazd,
   deleteVyjazd,
   getDevice,
+  mergeVyjazdy,
+  refreshVyjazdRoute,
+  setVyjazdStopDone,
   updateTicketPriority,
   updateTicketStatus,
   updateVyjazd,
@@ -18,7 +21,9 @@ import type {
   TicketPriority,
   TicketStatus,
   VyjazdStatus,
+  VyjazdStop,
 } from "./types";
+import { parseStopsJson } from "./vyjazd-stops";
 
 function str(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -117,6 +122,12 @@ function vyjazdStatus(formData: FormData): VyjazdStatus {
   return VYJAZD_STATUSES.includes(raw) ? raw : "naplanovany";
 }
 
+function parseStops(formData: FormData): VyjazdStop[] {
+  const raw = str(formData, "stopsJson");
+  if (!raw) return [];
+  return parseStopsJson(raw);
+}
+
 async function enrichFromDevice(deviceUuid: string) {
   if (!deviceUuid) return null;
   return getDevice(deviceUuid);
@@ -132,8 +143,17 @@ export async function createVyjazdAction(formData: FormData) {
   const priority = (str(formData, "priority") || "normalna") as TicketPriority;
   const status = vyjazdStatus(formData);
   const description = str(formData, "description");
-  const deviceUuid = str(formData, "deviceUuid");
-  const ticketId = str(formData, "ticketId");
+  let deviceUuid = str(formData, "deviceUuid");
+  let ticketId = str(formData, "ticketId");
+  const stops = parseStops(formData);
+
+  if (stops.length > 0) {
+    store = store || stops[0].store;
+    address = address || stops[0].address || "";
+    contactPhone = contactPhone || stops[0].contactPhone || "";
+    deviceUuid = deviceUuid || stops[0].deviceUuid || "";
+    ticketId = ticketId || stops[0].ticketId || "";
+  }
 
   const device = await enrichFromDevice(deviceUuid);
   if (device) {
@@ -147,8 +167,8 @@ export async function createVyjazdAction(formData: FormData) {
     contactPhone = contactPhone || device.phone;
   }
 
-  if (!title || !store) {
-    throw new Error("Vyplň povinné polia: názov výjazdu a predajňu/zákazníka.");
+  if (!title || !(store || stops.some((s) => s.store))) {
+    throw new Error("Vyplň povinné polia: názov výjazdu a aspoň jednu prevádzku.");
   }
 
   const vyjazd = await createVyjazd({
@@ -163,10 +183,16 @@ export async function createVyjazdAction(formData: FormData) {
     description,
     deviceUuid,
     ticketId,
+    stops,
+    originLabel: str(formData, "originLabel"),
+    originAddress: str(formData, "originAddress"),
   });
 
   revalidatePath("/vyjazdy");
   if (deviceUuid) revalidatePath(`/zariadenia/${deviceUuid}`);
+  for (const stop of stops) {
+    if (stop.deviceUuid) revalidatePath(`/zariadenia/${stop.deviceUuid}`);
+  }
   redirect(`/vyjazdy/${vyjazd.id}`);
 }
 
@@ -176,28 +202,45 @@ export async function updateVyjazdAction(formData: FormData) {
 
   const title = str(formData, "title");
   const store = str(formData, "store");
-  if (!title || !store) {
-    throw new Error("Vyplň povinné polia: názov výjazdu a predajňu/zákazníka.");
+  const stops = parseStops(formData);
+  if (!title || !(store || stops.some((s) => s.store))) {
+    throw new Error("Vyplň povinné polia: názov výjazdu a aspoň jednu prevádzku.");
   }
 
-  await updateVyjazd(id, {
-    title,
-    store,
-    address: str(formData, "address"),
-    contactPhone: str(formData, "contactPhone"),
-    technician: str(formData, "technician") || "Nepriradené",
-    scheduledAt: str(formData, "scheduledAt"),
-    status: vyjazdStatus(formData),
-    priority: (str(formData, "priority") || "normalna") as TicketPriority,
-    description: str(formData, "description"),
-    result: str(formData, "result"),
-    deviceUuid: str(formData, "deviceUuid"),
-    ticketId: str(formData, "ticketId"),
-  });
+  await updateVyjazd(
+    id,
+    {
+      title,
+      store,
+      address: str(formData, "address"),
+      contactPhone: str(formData, "contactPhone"),
+      technician: str(formData, "technician") || "Nepriradené",
+      scheduledAt: str(formData, "scheduledAt"),
+      priority: (str(formData, "priority") || "normalna") as TicketPriority,
+      description: str(formData, "description"),
+      result: str(formData, "result"),
+      deviceUuid: str(formData, "deviceUuid"),
+      ticketId: str(formData, "ticketId"),
+      stops,
+      originLabel: str(formData, "originLabel"),
+      originAddress: str(formData, "originAddress"),
+    },
+    { syncStatusFromStops: true },
+  );
 
   revalidatePath("/vyjazdy");
   revalidatePath(`/vyjazdy/${id}`);
   redirect(`/vyjazdy/${id}?saved=1`);
+}
+
+export async function recalcVyjazdRouteAction(formData: FormData) {
+  const id = str(formData, "id");
+  if (!id) return;
+
+  await refreshVyjazdRoute(id);
+  revalidatePath("/vyjazdy");
+  revalidatePath(`/vyjazdy/${id}`);
+  redirect(`/vyjazdy/${id}?routed=1`);
 }
 
 export async function updateVyjazdStatusAction(formData: FormData) {
@@ -208,6 +251,39 @@ export async function updateVyjazdStatusAction(formData: FormData) {
   await updateVyjazdStatus(id, status);
   revalidatePath("/vyjazdy");
   revalidatePath(`/vyjazdy/${id}`);
+}
+
+export async function toggleVyjazdStopDoneAction(formData: FormData) {
+  const id = str(formData, "id");
+  const stopId = str(formData, "stopId");
+  const done = str(formData, "done") === "1";
+  if (!id || !stopId) return;
+
+  const vyjazd = await setVyjazdStopDone(id, stopId, done);
+  revalidatePath("/vyjazdy");
+  revalidatePath(`/vyjazdy/${id}`);
+  if (vyjazd) {
+    for (const stop of vyjazd.stops) {
+      if (stop.deviceUuid) revalidatePath(`/zariadenia/${stop.deviceUuid}`);
+    }
+  }
+}
+
+export async function mergeVyjazdAction(formData: FormData) {
+  const primaryId = str(formData, "primaryId") || str(formData, "id");
+  const secondaryId = str(formData, "secondaryId");
+  if (!primaryId || !secondaryId) {
+    throw new Error("Vyber výjazd, ktorý sa má spojiť.");
+  }
+
+  const merged = await mergeVyjazdy(primaryId, secondaryId);
+  revalidatePath("/vyjazdy");
+  revalidatePath(`/vyjazdy/${primaryId}`);
+  revalidatePath(`/vyjazdy/${secondaryId}`);
+  for (const stop of merged.stops) {
+    if (stop.deviceUuid) revalidatePath(`/zariadenia/${stop.deviceUuid}`);
+  }
+  redirect(`/vyjazdy/${primaryId}?merged=1`);
 }
 
 export async function deleteVyjazdAction(formData: FormData) {

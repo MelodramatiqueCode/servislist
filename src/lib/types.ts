@@ -132,6 +132,39 @@ export type VyjazdStatus =
   | "hotovy"
   | "zruseny";
 
+export type VyjazdStop = {
+  id: string;
+  store: string;
+  address: string;
+  contactPhone: string;
+  deviceUuid: string;
+  ticketId: string;
+  done: boolean;
+  note: string;
+};
+
+export type VyjazdRouteStatus = "ok" | "incomplete" | "error";
+
+export type VyjazdRouteSummary = {
+  status: VyjazdRouteStatus;
+  distanceMeters: number;
+  durationSeconds: number;
+  computedAt: string;
+  fingerprint: string;
+  error: string;
+};
+
+export type VyjazdStopInput = {
+  id?: string;
+  store: string;
+  address?: string;
+  contactPhone?: string;
+  deviceUuid?: string;
+  ticketId?: string;
+  done?: boolean;
+  note?: string;
+};
+
 export type Vyjazd = {
   id: string;
   number: number;
@@ -147,6 +180,10 @@ export type Vyjazd = {
   ticketId: string;
   description: string;
   result: string;
+  stops: VyjazdStop[];
+  route: VyjazdRouteSummary | null;
+  originLabel: string;
+  originAddress: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -164,6 +201,9 @@ export type CreateVyjazdInput = {
   ticketId?: string;
   description?: string;
   result?: string;
+  stops?: VyjazdStopInput[];
+  originLabel?: string;
+  originAddress?: string;
 };
 
 export type UpdateVyjazdInput = Partial<
