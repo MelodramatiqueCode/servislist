@@ -182,6 +182,8 @@ export type Vyjazd = {
   result: string;
   stops: VyjazdStop[];
   route: VyjazdRouteSummary | null;
+  originLabel: string;
+  originAddress: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -200,6 +202,8 @@ export type CreateVyjazdInput = {
   description?: string;
   result?: string;
   stops?: VyjazdStopInput[];
+  originLabel?: string;
+  originAddress?: string;
 };
 
 export type UpdateVyjazdInput = Partial<

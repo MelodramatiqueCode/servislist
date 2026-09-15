@@ -31,13 +31,14 @@ import {
 import {
   liveRouteError,
   liveRouteLabel,
-  mappedRouteStopCount,
+  mappedRoutePointCount,
 } from "@/lib/route-estimate";
 import {
   allStopsDone,
   canMergeVyjazdStatus,
   deviceStoreLabel,
   doneStopCount,
+  originQuery,
   prevadzkyCountLabel,
   routeNavigationUrl,
   stopNavigationUrl,
@@ -98,12 +99,13 @@ export default async function VyjazdEditorPage({
 
   const done = doneStopCount(vyjazd.stops);
   const complete = allStopsDone(vyjazd.stops);
-  const routeUrl = routeNavigationUrl(vyjazd.stops);
+  const routeUrl = routeNavigationUrl(vyjazd.stops, vyjazd);
   const singleNavUrl =
     routeUrl ?? stopNavigationUrl(vyjazd.stops[0] ?? {});
   const routeLabel = liveRouteLabel(vyjazd);
   const routeError = liveRouteError(vyjazd);
-  const canEstimateRoute = mappedRouteStopCount(vyjazd.stops) >= 2;
+  const canEstimateRoute = mappedRoutePointCount(vyjazd.stops, vyjazd) >= 2;
+  const originText = originQuery(vyjazd);
 
   return (
     <div className="shell max-w-4xl space-y-6">
@@ -165,9 +167,10 @@ export default async function VyjazdEditorPage({
               Približne, podľa OpenStreetMap (Nominatim + OSRM).
             </p>
           </div>
-        ) : vyjazd.stops.length > 1 ? (
+        ) : vyjazd.stops.length > 0 ? (
           <p className="text-sm text-[var(--ink-soft)]">
-            Doplň aspoň dve adresy, aby sa dala spočítať vzdialenosť a čas.
+            Doplň výstupný bod alebo aspoň dve adresy zastávok, aby sa dala
+            spočítať vzdialenosť a čas.
           </p>
         ) : null}
         <h1 className="text-3xl font-extrabold leading-tight md:text-4xl">
@@ -179,6 +182,9 @@ export default async function VyjazdEditorPage({
           {formatDateTime(vyjazd.scheduledAt)}
           {vyjazd.stops.length > 0
             ? ` · Ticknuté ${done} / ${vyjazd.stops.length}`
+            : ""}
+          {originText
+            ? ` · Z: ${vyjazd.originLabel || originText}`
             : ""}
         </p>
         {saved ? <p className="chip chip-ok">Zmeny uložené ✓</p> : null}
@@ -259,6 +265,10 @@ export default async function VyjazdEditorPage({
                 vyjazdId={vyjazd.id}
                 allowTick
                 vyjazdStatus={vyjazd.status}
+                initialOrigin={{
+                  label: vyjazd.originLabel,
+                  address: vyjazd.originAddress,
+                }}
               />
 
               <div className="field md:col-span-2">

@@ -1,5 +1,5 @@
 import type { VyjazdRouteSummary, VyjazdStop } from "./types";
-import { stopMapsQuery } from "./vyjazd-stops";
+import { originQuery, stopMapsQuery } from "./vyjazd-stops";
 
 const DEFAULT_OSRM = "https://router.project-osrm.org";
 const DEFAULT_NOMINATIM = "https://nominatim.openstreetmap.org";
@@ -62,19 +62,39 @@ async function fetchJson(url: string): Promise<unknown> {
   return res.json();
 }
 
+export type RouteOrigin = {
+  originAddress?: string;
+  originLabel?: string;
+} | string | null | undefined;
+
 export function routeFingerprint(
   stops: Array<{ store?: string; address?: string }>,
+  origin?: RouteOrigin,
 ) {
-  return stops
+  const parts = stops
     .map((stop) => stopMapsQuery(stop).trim().toLowerCase())
-    .filter(Boolean)
-    .join(" → ");
+    .filter(Boolean);
+  const from =
+    typeof origin === "string"
+      ? origin.trim().toLowerCase()
+      : originQuery(origin ?? undefined).toLowerCase();
+  if (from) return [`origin:${from}`, ...parts].join(" → ");
+  return parts.join(" → ");
 }
 
 export function mappedRouteStopCount(
   stops: Array<{ store?: string; address?: string }>,
 ) {
   return stops.filter((stop) => stopMapsQuery(stop).trim()).length;
+}
+
+export function mappedRoutePointCount(
+  stops: Array<{ store?: string; address?: string }>,
+  origin?: RouteOrigin,
+) {
+  const from =
+    typeof origin === "string" ? origin.trim() : originQuery(origin ?? undefined);
+  return (from ? 1 : 0) + mappedRouteStopCount(stops);
 }
 
 function errorSummary(
@@ -205,20 +225,31 @@ async function osrmRoute(points: LatLon[]) {
  */
 export async function estimateDrivingRoute(
   stops: Array<{ store?: string; address?: string }>,
+  origin?: RouteOrigin,
 ): Promise<VyjazdRouteSummary> {
   const computedAt = new Date().toISOString();
-  const queries = stops
-    .map((stop) => stopMapsQuery(stop).trim())
-    .filter(Boolean);
-  const fingerprint = routeFingerprint(stops);
+  const fingerprint = routeFingerprint(stops, origin);
+  const mapped = stops.filter((stop) => stopMapsQuery(stop).trim());
+  const originMeta =
+    typeof origin === "string"
+      ? { originAddress: origin, originLabel: "" }
+      : origin ?? undefined;
+  const from = originQuery(originMeta);
 
-  if (queries.length < 2) {
+  if (mappedRoutePointCount(mapped, originMeta) < 2) {
     return incompleteSummary(fingerprint, computedAt);
   }
 
   try {
-    const mapped = stops.filter((stop) => stopMapsQuery(stop).trim());
     const points: LatLon[] = [];
+    if (from) {
+      const originPoint = await geocodeStop({
+        store: originMeta?.originLabel ?? "",
+        address: originMeta?.originAddress || from,
+      });
+      if (!originPoint) return errorSummary(fingerprint, computedAt);
+      points.push(originPoint);
+    }
     for (const stop of mapped) {
       const point = await geocodeStop(stop);
       if (!point) return errorSummary(fingerprint, computedAt);
@@ -273,10 +304,12 @@ export function formatRouteLabel(route: VyjazdRouteSummary) {
 export function liveRouteLabel(v: {
   stops?: VyjazdStop[];
   route?: VyjazdRouteSummary | null;
+  originAddress?: string;
+  originLabel?: string;
 }) {
   const route = v.route;
   if (!route || route.status !== "ok") return null;
-  if (route.fingerprint !== routeFingerprint(v.stops ?? [])) return null;
+  if (route.fingerprint !== routeFingerprint(v.stops ?? [], v)) return null;
   const label = formatRouteLabel(route);
   return label || null;
 }
@@ -284,9 +317,12 @@ export function liveRouteLabel(v: {
 export function liveRouteError(v: {
   stops?: VyjazdStop[];
   route?: VyjazdRouteSummary | null;
+  originAddress?: string;
+  originLabel?: string;
 }) {
   const route = v.route;
   if (!route || route.status !== "error") return null;
-  if (route.fingerprint !== routeFingerprint(v.stops ?? [])) return null;
+  if (route.fingerprint !== routeFingerprint(v.stops ?? [], v)) return null;
   return route.error || "Vzdialenosť sa nepodarilo spočítať";
 }
+

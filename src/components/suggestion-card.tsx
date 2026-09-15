@@ -1,4 +1,5 @@
 import { createVyjazdAction } from "@/lib/actions";
+import { OriginHiddenInputs } from "@/components/origin-hidden-inputs";
 import { priorityClass } from "@/lib/format";
 import { PRIORITY_LABELS } from "@/lib/types";
 import type { VyjazdSuggestion } from "@/lib/suggestions";
@@ -121,6 +122,7 @@ export function SuggestionCard({
                 name="stopsJson"
                 value={JSON.stringify(opt.stops)}
               />
+              <OriginHiddenInputs />
               <button
                 type="submit"
                 className={`btn w-full text-left ${

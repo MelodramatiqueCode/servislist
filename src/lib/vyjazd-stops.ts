@@ -326,6 +326,8 @@ export function hydrateVyjazd(
     result: v.result ?? "",
     stops,
     route: hydrateRouteSummary(v.route),
+    originLabel: v.originLabel ?? "",
+    originAddress: v.originAddress ?? "",
     createdAt: v.createdAt ?? nowIso(),
     updatedAt: v.updatedAt ?? nowIso(),
   };
@@ -378,9 +380,24 @@ export function stopMapsQuery(stop: { store?: string; address?: string }) {
   return address || store;
 }
 
+export function originQuery(origin?: {
+  originAddress?: string;
+  originLabel?: string;
+} | null) {
+  if (!origin) return "";
+  const address = (origin.originAddress ?? "").trim();
+  const label = (origin.originLabel ?? "").trim();
+  if (address && label) {
+    if (address.toLowerCase().includes(label.toLowerCase())) return address;
+    return `${address}, ${label}`;
+  }
+  return address || label;
+}
+
 export function googleMapsDirUrl(
   destination: string,
   waypoints: string[] = [],
+  origin?: string,
 ) {
   const dest = destination.trim();
   if (!dest) return null;
@@ -388,6 +405,8 @@ export function googleMapsDirUrl(
   params.set("api", "1");
   params.set("destination", dest);
   params.set("travelmode", "driving");
+  const from = (origin ?? "").trim();
+  if (from) params.set("origin", from);
   const via = waypoints.map((point) => point.trim()).filter(Boolean);
   if (via.length > 0) {
     params.set("waypoints", via.slice(0, 9).join("|"));
@@ -403,10 +422,21 @@ export function stopNavigationUrl(stop: { store?: string; address?: string }) {
 
 export function routeNavigationUrl(
   stops: Array<{ store?: string; address?: string }>,
+  origin?: { originAddress?: string; originLabel?: string } | string | null,
 ) {
   const queries = stops
     .map((stop) => stopMapsQuery(stop))
     .filter((query): query is string => Boolean(query));
+  const from =
+    typeof origin === "string"
+      ? origin.trim()
+      : originQuery(origin ?? undefined);
+  if (from) {
+    if (queries.length === 0) return null;
+    const destination = queries[queries.length - 1];
+    const waypoints = queries.slice(0, -1);
+    return googleMapsDirUrl(destination, waypoints, from);
+  }
   if (queries.length < 2) return null;
   const destination = queries[queries.length - 1];
   const waypoints = queries.slice(0, -1);
@@ -566,6 +596,7 @@ export function pickMergePriority(
  * - priority: max(primary, secondary)
  * - status: prebieha if either was already prebieha, then tick-derived status
  * - stops: primary order, then secondary; dedupe ticket / device / store+address
+ * - origin: primary výstupný bod, fallback to secondary if primary is empty
  * - secondary: soft-cancel to zruseny with note „Spojené do V-xxxx“
  */
 export function buildMergedVyjazdPair(
@@ -591,6 +622,9 @@ export function buildMergedVyjazdPair(
       : "naplanovany";
   nextStatus = statusAfterStopProgress(nextStatus, mergedStops);
 
+  const useSecondaryOrigin =
+    !originQuery(primary) && Boolean(originQuery(secondary));
+
   const mergedPrimary = syncLegacyVyjazdFields({
     ...primary,
     title: primary.title.trim() || secondary.title,
@@ -599,6 +633,10 @@ export function buildMergedVyjazdPair(
     scheduledAt: pickMergeScheduledAt(primary.scheduledAt, secondary.scheduledAt),
     priority: pickMergePriority(primary.priority, secondary.priority),
     status: nextStatus,
+    originLabel: useSecondaryOrigin ? secondary.originLabel : primary.originLabel,
+    originAddress: useSecondaryOrigin
+      ? secondary.originAddress
+      : primary.originAddress,
     stops: mergedStops,
     result: appendNote(
       mergeNarrative(primary.result, secondary.result),

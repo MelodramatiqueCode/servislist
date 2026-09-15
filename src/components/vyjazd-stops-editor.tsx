@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { MapsNavLink } from "@/components/maps-nav-link";
 import { toggleVyjazdStopDoneAction } from "@/lib/actions";
+import { readOriginPref, writeOriginPref } from "@/lib/origin-pref";
 import { VYJAZD_STATUS_LABELS, type VyjazdStatus, type VyjazdStop } from "@/lib/types";
 import {
   emptyStop,
+  originQuery,
   prevadzkyCountLabel,
   remainingStopCount,
   routeNavigationUrl,
@@ -30,16 +32,28 @@ export function VyjazdStopsEditor({
   vyjazdId,
   allowTick = false,
   vyjazdStatus = "naplanovany",
+  initialOrigin,
 }: {
   initialStops: VyjazdStop[];
   devices: StopDeviceOption[];
   vyjazdId?: string;
   allowTick?: boolean;
   vyjazdStatus?: VyjazdStatus;
+  initialOrigin?: { label?: string; address?: string };
 }) {
+  const originBox = useRef<HTMLDivElement>(null);
   const [stops, setStops] = useState<VyjazdStop[]>(
     initialStops.length > 0 ? initialStops : [emptyStop()],
   );
+  const [originLabel, setOriginLabel] = useState(initialOrigin?.label ?? "");
+  const [originAddress, setOriginAddress] = useState(
+    initialOrigin?.address ?? "",
+  );
+  const [rememberOrigin, setRememberOrigin] = useState(true);
+  const [savedPref, setSavedPref] = useState<{
+    label: string;
+    address: string;
+  } | null>(null);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -48,12 +62,40 @@ export function VyjazdStopsEditor({
     [initialStops],
   );
 
+  useEffect(() => {
+    const saved = readOriginPref();
+    setSavedPref(saved);
+    if ((initialOrigin?.label || initialOrigin?.address) && !saved) return;
+    if (initialOrigin?.label || initialOrigin?.address) return;
+    if (saved) {
+      setOriginLabel(saved.label);
+      setOriginAddress(saved.address);
+    }
+  }, [initialOrigin?.label, initialOrigin?.address]);
+
+  useEffect(() => {
+    const form = originBox.current?.closest("form");
+    if (!form) return;
+    const onSubmit = () => {
+      if (!rememberOrigin) return;
+      writeOriginPref({ label: originLabel, address: originAddress });
+    };
+    form.addEventListener("submit", onSubmit);
+    return () => form.removeEventListener("submit", onSubmit);
+  }, [rememberOrigin, originLabel, originAddress]);
+
   const primary = stops.find((s) => s.store.trim()) ?? stops[0];
   const doneCount = stops.filter((s) => s.done).length;
   const remaining = remainingStopCount(stops);
   const liveStatus = statusAfterStopProgress(vyjazdStatus, stops);
-  const routeUrl = routeNavigationUrl(stops);
+  const origin = { originLabel, originAddress };
+  const routeUrl = routeNavigationUrl(stops, origin);
   const filledCount = stops.filter((s) => s.store.trim() || s.address.trim()).length;
+  const originFilled = Boolean(originQuery(origin));
+  const canUsePref =
+    Boolean(savedPref && (savedPref.label || savedPref.address)) &&
+    (savedPref?.label !== originLabel.trim() ||
+      savedPref?.address !== originAddress.trim());
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -160,6 +202,64 @@ export function VyjazdStopsEditor({
         value={primary?.deviceUuid ?? ""}
       />
       <input type="hidden" name="ticketId" value={primary?.ticketId ?? ""} />
+
+      <div
+        ref={originBox}
+        className="rounded-xl border border-[var(--line)] bg-white/70 p-3.5"
+      >
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h3 className="text-base font-bold">Výstupný bod</h3>
+            <p className="text-sm text-[var(--ink-soft)]">
+              Odkiaľ cestujem — začiatok navigácie a odhadu km / času
+              {originFilled ? " · použitý ako origin trasy" : ""}.
+            </p>
+          </div>
+          {canUsePref ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                if (!savedPref) return;
+                setOriginLabel(savedPref.label);
+                setOriginAddress(savedPref.address);
+              }}
+            >
+              Použiť predvolený
+            </button>
+          ) : null}
+        </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div className="field">
+            <label htmlFor="originLabel">Názov (voliteľné)</label>
+            <input
+              id="originLabel"
+              name="originLabel"
+              value={originLabel}
+              onChange={(e) => setOriginLabel(e.target.value)}
+              placeholder="napr. Domov, sklad, servis"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="originAddress">Adresa</label>
+            <input
+              id="originAddress"
+              name="originAddress"
+              value={originAddress}
+              onChange={(e) => setOriginAddress(e.target.value)}
+              placeholder="ulica, mesto"
+            />
+          </div>
+        </div>
+        <label className="mt-3 flex items-center gap-2 text-sm text-[var(--ink-soft)]">
+          <input
+            type="checkbox"
+            checked={rememberOrigin}
+            onChange={(e) => setRememberOrigin(e.target.checked)}
+          />
+          Zapamätať v tomto prehliadači ako predvolený výstupný bod
+        </label>
+      </div>
 
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>

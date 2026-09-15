@@ -184,6 +184,8 @@ export async function createVyjazdAction(formData: FormData) {
     deviceUuid,
     ticketId,
     stops,
+    originLabel: str(formData, "originLabel"),
+    originAddress: str(formData, "originAddress"),
   });
 
   revalidatePath("/vyjazdy");
@@ -220,6 +222,8 @@ export async function updateVyjazdAction(formData: FormData) {
       deviceUuid: str(formData, "deviceUuid"),
       ticketId: str(formData, "ticketId"),
       stops,
+      originLabel: str(formData, "originLabel"),
+      originAddress: str(formData, "originAddress"),
     },
     { syncStatusFromStops: true },
   );

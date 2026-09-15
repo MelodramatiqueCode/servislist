@@ -201,7 +201,7 @@ export default async function VyjazdyPage({
         ) : (
           <ul>
             {vyjazdy.map((v) => {
-              const routeUrl = routeNavigationUrl(v.stops);
+              const routeUrl = routeNavigationUrl(v.stops, v);
               const navUrl = routeUrl ?? stopNavigationUrl(v.stops[0] ?? {});
               const routeLabel = liveRouteLabel(v);
               return (
@@ -222,6 +222,9 @@ export default async function VyjazdyPage({
                       <span>{storeSummary(v)}</span>
                       {v.stops.length > 1 ? (
                         <span>{prevadzkyCountLabel(v.stops.length)}</span>
+                      ) : null}
+                      {v.originLabel || v.originAddress ? (
+                        <span>Z: {v.originLabel || v.originAddress}</span>
                       ) : null}
                       {routeLabel ? <span>{routeLabel}</span> : null}
                       {v.stops.length > 0 &&
