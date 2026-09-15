@@ -2,6 +2,7 @@ import { createVyjazdAction } from "@/lib/actions";
 import { priorityClass } from "@/lib/format";
 import { PRIORITY_LABELS } from "@/lib/types";
 import type { VyjazdSuggestion } from "@/lib/suggestions";
+import { prevadzkyCountLabel } from "@/lib/vyjazd-stops";
 
 export function SuggestionCard({
   suggestion,
@@ -11,6 +12,7 @@ export function SuggestionCard({
   compact?: boolean;
 }) {
   const s = suggestion;
+  const routeStops = Math.max(s.stopCount, 1);
 
   return (
     <div className="rounded-2xl border border-[var(--line)] bg-white/70 p-4 md:p-5">
@@ -29,7 +31,11 @@ export function SuggestionCard({
           <span className={`chip ${priorityClass(s.priority)}`}>
             {PRIORITY_LABELS[s.priority]}
           </span>
-          {s.storeDeviceCount > 1 ? (
+          {routeStops > 1 ? (
+            <span className="chip chip-warn">
+              {prevadzkyCountLabel(routeStops)}
+            </span>
+          ) : s.storeDeviceCount > 1 ? (
             <span className="chip chip-warn">
               {s.storeDeviceCount} zariadení
             </span>
@@ -37,21 +43,37 @@ export function SuggestionCard({
         </div>
       </div>
 
-      <ul className="mt-3 space-y-1 text-sm text-[var(--ink-soft)]">
-        {s.reasons.slice(0, 4).map((reason) => (
-          <li key={reason} className="flex gap-2">
-            <span aria-hidden className="text-[var(--teal)]">
-              •
-            </span>
-            <span>{reason}</span>
-          </li>
-        ))}
-        {s.reasons.length > 4 ? (
-          <li className="text-xs opacity-70">
-            +{s.reasons.length - 4} ďalších dôvodov
-          </li>
-        ) : null}
-      </ul>
+      {routeStops > 1 ? (
+        <ol className="mt-3 space-y-1 text-sm text-[var(--ink-soft)]">
+          {s.options
+            .find((opt) => opt.scope === "combined")
+            ?.stops.slice(0, 5)
+            .map((stop, index) => (
+              <li key={`${stop.store}-${index}`} className="flex gap-2">
+                <span className="font-semibold text-[var(--teal)]">
+                  {index + 1}.
+                </span>
+                <span>{stop.store}</span>
+              </li>
+            ))}
+        </ol>
+      ) : (
+        <ul className="mt-3 space-y-1 text-sm text-[var(--ink-soft)]">
+          {s.reasons.slice(0, 4).map((reason) => (
+            <li key={reason} className="flex gap-2">
+              <span aria-hidden className="text-[var(--teal)]">
+                •
+              </span>
+              <span>{reason}</span>
+            </li>
+          ))}
+          {s.reasons.length > 4 ? (
+            <li className="text-xs opacity-70">
+              +{s.reasons.length - 4} ďalších dôvodov
+            </li>
+          ) : null}
+        </ul>
+      )}
 
       <div
         className={`mt-4 grid gap-2 ${compact ? "" : "sm:grid-cols-2"}`}
@@ -59,15 +81,36 @@ export function SuggestionCard({
         {s.options.map((opt, index) => (
           <form key={opt.id} action={createVyjazdAction}>
             <input type="hidden" name="title" value={opt.title} />
-            <input type="hidden" name="store" value={s.store} />
-            <input type="hidden" name="address" value={s.address} />
-            <input type="hidden" name="contactPhone" value={s.contactPhone} />
+            <input type="hidden" name="store" value={opt.stops[0]?.store || s.store} />
+            <input
+              type="hidden"
+              name="address"
+              value={opt.stops[0]?.address || s.address}
+            />
+            <input
+              type="hidden"
+              name="contactPhone"
+              value={opt.stops[0]?.contactPhone || s.contactPhone}
+            />
             <input type="hidden" name="scheduledAt" value={opt.scheduledAt} />
             <input type="hidden" name="priority" value={opt.priority} />
             <input type="hidden" name="status" value="naplanovany" />
             <input type="hidden" name="description" value={opt.description} />
-            <input type="hidden" name="deviceUuid" value={s.deviceUuid} />
-            <input type="hidden" name="ticketId" value={s.ticketId} />
+            <input
+              type="hidden"
+              name="deviceUuid"
+              value={opt.stops[0]?.deviceUuid || s.deviceUuid}
+            />
+            <input
+              type="hidden"
+              name="ticketId"
+              value={opt.stops[0]?.ticketId || s.ticketId}
+            />
+            <input
+              type="hidden"
+              name="stopsJson"
+              value={JSON.stringify(opt.stops)}
+            />
             <button
               type="submit"
               className={`btn w-full text-left ${

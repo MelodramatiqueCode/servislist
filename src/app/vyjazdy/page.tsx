@@ -13,6 +13,7 @@ import {
   VYJAZD_STATUS_LABELS,
   type VyjazdStatus,
 } from "@/lib/types";
+import { prevadzkyCountLabel, storeSummary, doneStopCount } from "@/lib/vyjazd-stops";
 
 type SearchParams = Promise<{
   status?: string;
@@ -74,8 +75,8 @@ export default async function VyjazdyPage({
           Výjazdy
         </h1>
         <p className="max-w-2xl text-lg text-[var(--ink-soft)]">
-          Plánuj a edituj servisné výjazdy k predajniam — kto, kam, kedy a s
-          akým výsledkom.
+          Plánuj a edituj servisné výjazdy ako trasy po prevádzkach — kto, kam,
+          kedy a s akým výsledkom.
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
           <Link href="/vyjazdy/novy" className="btn btn-primary">
@@ -124,8 +125,8 @@ export default async function VyjazdyPage({
             <div>
               <h2 className="text-lg font-bold">Automatické návrhy výjazdov</h2>
               <p className="text-sm text-[var(--ink-soft)]">
-                Z otvorených ticketov a Balena alertov. Vyber jednu z dvoch
-                možností — expresne alebo súhrnne.
+                Z otvorených ticketov a Balena alertov. Vyber expresný výjazd
+                na jednu prevádzku, alebo trasu cez viac prevádzok.
               </p>
             </div>
             <span className="chip chip-warn">{suggestions.length}</span>
@@ -204,7 +205,16 @@ export default async function VyjazdyPage({
                   <div className="min-w-0 space-y-1.5">
                     <div className="truncate text-lg font-bold">{v.title}</div>
                     <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-[var(--ink-soft)]">
-                      <span>{v.store}</span>
+                      <span>{storeSummary(v)}</span>
+                      {v.stops.length > 1 ? (
+                        <span>{prevadzkyCountLabel(v.stops.length)}</span>
+                      ) : null}
+                      {v.stops.length > 0 &&
+                      (v.status === "naplanovany" || v.status === "prebieha") ? (
+                        <span>
+                          Ticknuté {doneStopCount(v.stops)}/{v.stops.length}
+                        </span>
+                      ) : null}
                       <span>Technik: {v.technician}</span>
                     </div>
                   </div>

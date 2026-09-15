@@ -7,6 +7,7 @@ import type {
   Vyjazd,
   VyjazdStore,
 } from "./types";
+import { hydrateVyjazd } from "./vyjazd-stops";
 
 type Sql = NeonQueryFunction<false, false>;
 
@@ -97,9 +98,14 @@ export async function ensureSchema() {
           ticket_id TEXT NOT NULL DEFAULT '',
           description TEXT NOT NULL DEFAULT '',
           result TEXT NOT NULL DEFAULT '',
+          stops JSONB NOT NULL DEFAULT '[]'::jsonb,
           created_at TIMESTAMPTZ NOT NULL,
           updated_at TIMESTAMPTZ NOT NULL
         )
+      `;
+      await sql`
+        ALTER TABLE vyjazdy
+        ADD COLUMN IF NOT EXISTS stops JSONB NOT NULL DEFAULT '[]'::jsonb
       `;
       await sql`
         CREATE INDEX IF NOT EXISTS vyjazdy_status_idx ON vyjazdy (status)
@@ -250,7 +256,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
 }
 
 function rowToVyjazd(row: Record<string, unknown>): Vyjazd {
-  return {
+  return hydrateVyjazd({
     id: String(row.id),
     number: Number(row.number),
     title: String(row.title),
@@ -265,6 +271,7 @@ function rowToVyjazd(row: Record<string, unknown>): Vyjazd {
     ticketId: String(row.ticket_id ?? ""),
     description: String(row.description ?? ""),
     result: String(row.result ?? ""),
+    stops: row.stops as Vyjazd["stops"],
     createdAt:
       row.created_at instanceof Date
         ? row.created_at.toISOString()
@@ -273,7 +280,7 @@ function rowToVyjazd(row: Record<string, unknown>): Vyjazd {
       row.updated_at instanceof Date
         ? row.updated_at.toISOString()
         : String(row.updated_at),
-  };
+  });
 }
 
 export async function dbReadVyjazdStore(): Promise<VyjazdStore> {
@@ -311,7 +318,7 @@ export async function dbWriteVyjazdStore(store: VyjazdStore) {
       INSERT INTO vyjazdy (
         id, number, title, store, address, contact_phone, technician,
         scheduled_at, status, priority, device_uuid, ticket_id,
-        description, result, created_at, updated_at
+        description, result, stops, created_at, updated_at
       ) VALUES (
         ${v.id},
         ${v.number},
@@ -327,6 +334,7 @@ export async function dbWriteVyjazdStore(store: VyjazdStore) {
         ${v.ticketId || ""},
         ${v.description},
         ${v.result},
+        ${JSON.stringify(v.stops ?? [])}::jsonb,
         ${v.createdAt}::timestamptz,
         ${v.updatedAt}::timestamptz
       )
@@ -344,6 +352,7 @@ export async function dbWriteVyjazdStore(store: VyjazdStore) {
         ticket_id = EXCLUDED.ticket_id,
         description = EXCLUDED.description,
         result = EXCLUDED.result,
+        stops = EXCLUDED.stops,
         updated_at = EXCLUDED.updated_at
     `;
   }

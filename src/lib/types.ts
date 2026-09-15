@@ -132,6 +132,28 @@ export type VyjazdStatus =
   | "hotovy"
   | "zruseny";
 
+export type VyjazdStop = {
+  id: string;
+  store: string;
+  address: string;
+  contactPhone: string;
+  deviceUuid: string;
+  ticketId: string;
+  done: boolean;
+  note: string;
+};
+
+export type VyjazdStopInput = {
+  id?: string;
+  store: string;
+  address?: string;
+  contactPhone?: string;
+  deviceUuid?: string;
+  ticketId?: string;
+  done?: boolean;
+  note?: string;
+};
+
 export type Vyjazd = {
   id: string;
   number: number;
@@ -147,6 +169,7 @@ export type Vyjazd = {
   ticketId: string;
   description: string;
   result: string;
+  stops: VyjazdStop[];
   createdAt: string;
   updatedAt: string;
 };
@@ -164,6 +187,7 @@ export type CreateVyjazdInput = {
   ticketId?: string;
   description?: string;
   result?: string;
+  stops?: VyjazdStopInput[];
 };
 
 export type UpdateVyjazdInput = Partial<

@@ -45,6 +45,14 @@ import type {
   VyjazdStore,
 } from "./types";
 import type { DeviceHealthFilter } from "./parse-device";
+import {
+  hydrateVyjazd,
+  markStopsDone,
+  statusAfterStopProgress,
+  stopsFromInput,
+  syncLegacyVyjazdFields,
+  vyjazdCoversDevice,
+} from "./vyjazd-stops";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const TICKETS_FILE = path.join(DATA_DIR, "tickets.json");
@@ -732,28 +740,6 @@ function seedVyjazdy(): VyjazdStore {
   };
 }
 
-function hydrateVyjazd(
-  v: Partial<Vyjazd> & Pick<Vyjazd, "id" | "number" | "title">,
-): Vyjazd {
-  return {
-    id: v.id,
-    number: v.number,
-    title: v.title,
-    store: v.store ?? "",
-    address: v.address ?? "",
-    contactPhone: v.contactPhone ?? "",
-    technician: v.technician ?? "",
-    scheduledAt: v.scheduledAt ?? "",
-    status: v.status ?? "naplanovany",
-    priority: v.priority ?? "normalna",
-    deviceUuid: v.deviceUuid ?? "",
-    ticketId: v.ticketId ?? "",
-    description: v.description ?? "",
-    result: v.result ?? "",
-    createdAt: v.createdAt ?? nowIso(),
-    updatedAt: v.updatedAt ?? nowIso(),
-  };
-}
 
 async function ensureVyjazdyFile() {
   await ensureDir();
@@ -770,12 +756,14 @@ async function ensureVyjazdyFile() {
 
 async function readVyjazdStore(): Promise<VyjazdStore> {
   if (isDatabaseConfigured()) {
-    return dbReadVyjazdStore();
+    const store = await dbReadVyjazdStore();
+    store.vyjazdy = (store.vyjazdy ?? []).map((v) => hydrateVyjazd(v));
+    return store;
   }
   await ensureVyjazdyFile();
   const raw = await fs.readFile(VYJAZDY_FILE, "utf8");
   const store = JSON.parse(raw) as VyjazdStore;
-  store.vyjazdy = (store.vyjazdy ?? []).map(hydrateVyjazd);
+  store.vyjazdy = (store.vyjazdy ?? []).map((v) => hydrateVyjazd(v));
   return store;
 }
 
@@ -819,7 +807,7 @@ export async function listVyjazdy(filters?: {
   }
 
   if (filters?.deviceUuid) {
-    vyjazdy = vyjazdy.filter((v) => v.deviceUuid === filters.deviceUuid);
+    vyjazdy = vyjazdy.filter((v) => vyjazdCoversDevice(v, filters.deviceUuid!));
   }
 
   if (filters?.q?.trim()) {
@@ -835,6 +823,13 @@ export async function listVyjazdy(filters?: {
         v.result,
         v.deviceUuid,
         String(v.number),
+        ...(v.stops ?? []).flatMap((s) => [
+          s.store,
+          s.address,
+          s.contactPhone,
+          s.deviceUuid,
+          s.note,
+        ]),
       ]
         .join(" ")
         .toLowerCase();
@@ -853,7 +848,8 @@ export async function getVyjazd(id: string): Promise<Vyjazd | null> {
 export async function createVyjazd(input: CreateVyjazdInput): Promise<Vyjazd> {
   const store = await readVyjazdStore();
   const timestamp = nowIso();
-  const vyjazd: Vyjazd = {
+  const stops = stopsFromInput(input);
+  const vyjazd = syncLegacyVyjazdFields({
     id: randomUUID(),
     number: store.nextNumber,
     title: input.title.trim(),
@@ -868,9 +864,10 @@ export async function createVyjazd(input: CreateVyjazdInput): Promise<Vyjazd> {
     ticketId: (input.ticketId ?? "").trim(),
     description: (input.description ?? "").trim(),
     result: (input.result ?? "").trim(),
+    stops,
     createdAt: timestamp,
     updatedAt: timestamp,
-  };
+  });
 
   store.nextNumber += 1;
   store.vyjazdy.unshift(vyjazd);
@@ -881,6 +878,7 @@ export async function createVyjazd(input: CreateVyjazdInput): Promise<Vyjazd> {
 export async function updateVyjazd(
   id: string,
   patch: UpdateVyjazdInput,
+  opts?: { syncStatusFromStops?: boolean },
 ): Promise<Vyjazd | null> {
   const store = await readVyjazdStore();
   const vyjazd = store.vyjazdy.find((v) => v.id === id);
@@ -911,6 +909,21 @@ export async function updateVyjazd(
     }
   }
 
+  if (patch.stops) {
+    vyjazd.stops = stopsFromInput({ stops: patch.stops });
+  } else if (!vyjazd.stops) {
+    vyjazd.stops = [];
+  }
+
+  if (patch.status === "hotovy") {
+    vyjazd.stops = markStopsDone(vyjazd.stops, true);
+  }
+
+  if (opts?.syncStatusFromStops) {
+    vyjazd.status = statusAfterStopProgress(vyjazd.status, vyjazd.stops);
+  }
+
+  syncLegacyVyjazdFields(vyjazd);
   vyjazd.updatedAt = nowIso();
   await writeVyjazdStore(store);
   return vyjazd;
@@ -921,6 +934,26 @@ export async function updateVyjazdStatus(
   status: VyjazdStatus,
 ): Promise<Vyjazd | null> {
   return updateVyjazd(id, { status });
+}
+
+export async function setVyjazdStopDone(
+  id: string,
+  stopId: string,
+  done: boolean,
+): Promise<Vyjazd | null> {
+  const store = await readVyjazdStore();
+  const vyjazd = store.vyjazdy.find((v) => v.id === id);
+  if (!vyjazd) return null;
+
+  const stop = vyjazd.stops.find((s) => s.id === stopId);
+  if (!stop) return null;
+
+  stop.done = done;
+  vyjazd.status = statusAfterStopProgress(vyjazd.status, vyjazd.stops);
+  syncLegacyVyjazdFields(vyjazd);
+  vyjazd.updatedAt = nowIso();
+  await writeVyjazdStore(store);
+  return vyjazd;
 }
 
 export async function deleteVyjazd(id: string): Promise<boolean> {
