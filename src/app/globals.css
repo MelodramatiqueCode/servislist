@@ -136,6 +136,23 @@ h3,
   transform: translateY(0);
 }
 
+.btn:disabled,
+.btn:disabled:hover,
+.btn:disabled:active {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-primary:disabled:hover {
+  background: var(--teal);
+}
+
+.btn-ghost:disabled:hover {
+  background: transparent;
+}
+
 .btn-primary {
   background: var(--teal);
   color: white;
