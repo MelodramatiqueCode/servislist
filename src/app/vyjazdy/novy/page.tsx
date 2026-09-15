@@ -27,6 +27,9 @@ export default async function NewVyjazdPage({
     name: d.name,
     phone: d.phone,
     address: d.address,
+    city: d.city,
+    code: d.code,
+    partner: d.partner,
     isOnline: d.isOnline,
     deviceType: d.deviceType,
   }));

@@ -17,6 +17,7 @@ import {
   prevadzkyCountLabel,
   stopCoverageKey,
 } from "./vyjazd-stops";
+import { composeDeviceStopAddress } from "./geocode-query";
 
 export type SuggestionOptionId = "expres" | "planovany";
 
@@ -728,7 +729,7 @@ export async function listVyjazdSuggestions(opts?: {
         deviceUuid: d.uuid,
         deviceName: d.name,
         store: deviceStoreLabel(d),
-        address: d.address,
+        address: composeDeviceStopAddress(d),
         phone: d.phone,
         city: d.city,
         partner: d.partner,
