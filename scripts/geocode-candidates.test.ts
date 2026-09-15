@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import {
   composeDeviceStopAddress,
   geocodeCandidates,
-} from "../src/lib/geocode-query.ts";
-import { parseDeviceName } from "../src/lib/parse-device.ts";
-import { stopFromDevice, stopMapsQuery } from "../src/lib/vyjazd-stops.ts";
+} from "../src/lib/geocode-query";
+import { parseDeviceName } from "../src/lib/parse-device";
+import { stopFromDevice, stopMapsQuery } from "../src/lib/vyjazd-stops";
 
 let failed = 0;
 
