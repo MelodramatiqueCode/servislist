@@ -1,3 +1,8 @@
+import {
+  composeDeviceStopAddress,
+  geocodeCandidates,
+  parseStoreLabel,
+} from "./geocode-query";
 import { vyjazdCode } from "./format";
 import type {
   ServiceDevice,
@@ -358,10 +363,17 @@ export function stopFromDevice(
   >,
   extra?: Partial<VyjazdStop>,
 ): VyjazdStop {
+  const store = extra?.store || deviceStoreLabel(device);
+  const rawAddress = extra?.address?.trim() || device.address || "";
+  const address = composeDeviceStopAddress({
+    name: device.name || store,
+    address: rawAddress,
+    city: device.city || parseStoreLabel(store).city,
+  });
   return {
     id: extra?.id || newStopId(),
-    store: extra?.store || deviceStoreLabel(device),
-    address: extra?.address || device.address || "",
+    store,
+    address,
     contactPhone: extra?.contactPhone || device.phone || "",
     deviceUuid: extra?.deviceUuid || device.uuid,
     ticketId: extra?.ticketId || "",
@@ -371,13 +383,7 @@ export function stopFromDevice(
 }
 
 export function stopMapsQuery(stop: { store?: string; address?: string }) {
-  const address = (stop.address ?? "").trim();
-  const store = (stop.store ?? "").trim();
-  if (address && store) {
-    if (address.toLowerCase().includes(store.toLowerCase())) return address;
-    return `${address}, ${store}`;
-  }
-  return address || store;
+  return geocodeCandidates(stop)[0] ?? "";
 }
 
 export function originQuery(origin?: {

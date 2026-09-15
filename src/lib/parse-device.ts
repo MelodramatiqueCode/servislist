@@ -52,6 +52,14 @@ function parseCodeParts(head: string) {
   };
 }
 
+/** PJ435 / K111 — internal shop codes, not a street. */
+function looksLikeInternalStoreCode(value: string) {
+  const t = value.trim();
+  if (!t) return false;
+  const head = t.split(/\s+/)[0] ?? t;
+  return /^(pj\d[\w.-]*|[a-z]{1,6}\d[\w.-]*)$/i.test(head);
+}
+
 export function parseDeviceName(deviceName: string) {
   const { phones, cleaned } = extractPhones(deviceName);
   const parts = cleaned
@@ -81,10 +89,20 @@ export function parseDeviceName(deviceName: string) {
     address = rest;
   }
 
-  if (!address && rest && parts.length <= 1) {
+  const restIsCode = looksLikeInternalStoreCode(rest);
+
+  if (!address && rest && !restIsCode && parts.length <= 1) {
     address = rest;
-  } else if (rest && !address.includes(rest) && parts.length >= 2) {
-    address = address ? `${rest}, ${address}` : rest;
+  } else if (
+    rest &&
+    !restIsCode &&
+    address &&
+    !address.includes(rest) &&
+    parts.length >= 2
+  ) {
+    address = `${rest}, ${address}`;
+  } else if (!address && rest && !restIsCode && parts.length >= 2) {
+    address = rest;
   }
 
   const labelParts = [code && `#${code}`, partner, city || head]
@@ -95,7 +113,10 @@ export function parseDeviceName(deviceName: string) {
     code,
     partner,
     city,
-    address: address || rest || cleaned,
+    address:
+      address ||
+      (!restIsCode && rest ? rest : "") ||
+      (city ? "" : cleaned),
     phone: phones[0] ?? "",
     label: labelParts || cleaned,
   };

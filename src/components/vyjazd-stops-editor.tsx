@@ -22,6 +22,9 @@ export type StopDeviceOption = {
   name: string;
   phone: string;
   address: string;
+  city?: string;
+  code?: string;
+  partner?: string;
   isOnline: boolean;
   deviceType: string;
 };
@@ -142,10 +145,10 @@ export function VyjazdStopsEditor({
       stopFromDevice(
         {
           uuid: device.uuid,
-          code: "",
-          partner: "",
-          city: "",
-          name: device.label,
+          code: device.code || "",
+          partner: device.partner || "",
+          city: device.city || "",
+          name: device.name || device.label,
           address: device.address,
           phone: device.phone,
         },

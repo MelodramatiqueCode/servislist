@@ -1,5 +1,8 @@
+import { geocodeCandidates } from "./geocode-query";
 import type { VyjazdRouteSummary, VyjazdStop } from "./types";
 import { originQuery, stopMapsQuery } from "./vyjazd-stops";
+
+export { geocodeCandidates };
 
 const DEFAULT_OSRM = "https://router.project-osrm.org";
 const DEFAULT_NOMINATIM = "https://nominatim.openstreetmap.org";
@@ -100,6 +103,7 @@ export function mappedRoutePointCount(
 function errorSummary(
   fingerprint: string,
   computedAt: string,
+  error?: string,
 ): VyjazdRouteSummary {
   return {
     status: "error",
@@ -107,8 +111,25 @@ function errorSummary(
     durationSeconds: 0,
     computedAt,
     fingerprint,
-    error: "Vzdialenosť sa nepodarilo spočítať",
+    error: error?.trim() || "Vzdialenosť sa nepodarilo spočítať",
   };
+}
+
+function stopErrorLabel(stop: { store?: string; address?: string }) {
+  const store = (stop.store ?? "").trim();
+  const address = (stop.address ?? "").trim();
+  return store || address || "neznáma zastávka";
+}
+
+function geocodeFailMessage(
+  kind: "origin" | "stop",
+  label: string,
+): string {
+  const name = label.trim() || "neznáme miesto";
+  if (kind === "origin") {
+    return `Vzdialenosť sa nepodarilo spočítať. Nenašiel sa výstupný bod „${name}“.`;
+  }
+  return `Vzdialenosť sa nepodarilo spočítať. Nenašla sa zastávka „${name}“.`;
 }
 
 function incompleteSummary(
@@ -127,23 +148,6 @@ function incompleteSummary(
 
 let lastNominatimAt = 0;
 
-function geocodeCandidates(stop: { store?: string; address?: string }) {
-  const address = (stop.address ?? "").trim();
-  const store = (stop.store ?? "").trim();
-  const combined = stopMapsQuery(stop).trim();
-  const out: string[] = [];
-  const push = (query: string) => {
-    const q = query.trim();
-    if (!q) return;
-    if (out.some((existing) => existing.toLowerCase() === q.toLowerCase())) return;
-    out.push(q);
-  };
-  push(address);
-  push(combined);
-  push(store);
-  return out;
-}
-
 async function geocodeOnce(query: string) {
   if (throttleNominatim()) {
     const wait = GEOCODE_GAP_MS - (Date.now() - lastNominatimAt);
@@ -155,6 +159,7 @@ async function geocodeOnce(query: string) {
     format: "jsonv2",
     limit: "1",
     addressdetails: "0",
+    countrycodes: "sk",
   });
   const url = `${nominatimBase()}/search?${params.toString()}`;
   const data = await fetchJson(url);
@@ -167,14 +172,12 @@ async function geocodeOnce(query: string) {
 }
 
 async function geocode(query: string): Promise<LatLon | null> {
-  const key = query.trim().toLowerCase();
-  if (!key) return null;
+  const trimmed = query.trim();
+  if (!trimmed) return null;
+  const key = `sk:${trimmed.toLowerCase()}`;
   if (geocodeCache.has(key)) return geocodeCache.get(key) ?? null;
 
-  let point = await geocodeOnce(query);
-  if (!point && !/,?\s*slovensko\s*$/i.test(query)) {
-    point = await geocodeOnce(`${query}, Slovensko`);
-  }
+  const point = await geocodeOnce(trimmed);
 
   if (point) {
     if (geocodeCache.size > 200) {
@@ -247,16 +250,34 @@ export async function estimateDrivingRoute(
         store: originMeta?.originLabel ?? "",
         address: originMeta?.originAddress || from,
       });
-      if (!originPoint) return errorSummary(fingerprint, computedAt);
+      if (!originPoint) {
+        return errorSummary(
+          fingerprint,
+          computedAt,
+          geocodeFailMessage("origin", originMeta?.originLabel || from),
+        );
+      }
       points.push(originPoint);
     }
     for (const stop of mapped) {
       const point = await geocodeStop(stop);
-      if (!point) return errorSummary(fingerprint, computedAt);
+      if (!point) {
+        return errorSummary(
+          fingerprint,
+          computedAt,
+          geocodeFailMessage("stop", stopErrorLabel(stop)),
+        );
+      }
       points.push(point);
     }
     const route = await osrmRoute(points);
-    if (!route) return errorSummary(fingerprint, computedAt);
+    if (!route) {
+      return errorSummary(
+        fingerprint,
+        computedAt,
+        "Vzdialenosť sa nepodarilo spočítať. Trasovanie cesty zlyhalo.",
+      );
+    }
     return {
       status: "ok",
       distanceMeters: route.distance,
