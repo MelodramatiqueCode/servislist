@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { MapsNavLink } from "@/components/maps-nav-link";
 import { toggleVyjazdStopDoneAction } from "@/lib/actions";
-import { readOriginPref, writeOriginPref } from "@/lib/origin-pref";
+import { useOriginPref, writeOriginPref } from "@/lib/origin-pref";
 import { VYJAZD_STATUS_LABELS, type VyjazdStatus, type VyjazdStop } from "@/lib/types";
 import {
   emptyStop,
@@ -42,6 +42,10 @@ export function VyjazdStopsEditor({
   initialOrigin?: { label?: string; address?: string };
 }) {
   const originBox = useRef<HTMLDivElement>(null);
+  const pref = useOriginPref();
+  const hasInitialOrigin = Boolean(
+    initialOrigin?.label?.trim() || initialOrigin?.address?.trim(),
+  );
   const [stops, setStops] = useState<VyjazdStop[]>(
     initialStops.length > 0 ? initialStops : [emptyStop()],
   );
@@ -49,11 +53,8 @@ export function VyjazdStopsEditor({
   const [originAddress, setOriginAddress] = useState(
     initialOrigin?.address ?? "",
   );
+  const [originCustomized, setOriginCustomized] = useState(hasInitialOrigin);
   const [rememberOrigin, setRememberOrigin] = useState(true);
-  const [savedPref, setSavedPref] = useState<{
-    label: string;
-    address: string;
-  } | null>(null);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -62,40 +63,38 @@ export function VyjazdStopsEditor({
     [initialStops],
   );
 
-  useEffect(() => {
-    const saved = readOriginPref();
-    setSavedPref(saved);
-    if ((initialOrigin?.label || initialOrigin?.address) && !saved) return;
-    if (initialOrigin?.label || initialOrigin?.address) return;
-    if (saved) {
-      setOriginLabel(saved.label);
-      setOriginAddress(saved.address);
-    }
-  }, [initialOrigin?.label, initialOrigin?.address]);
+  const displayOriginLabel = originCustomized ? originLabel : pref.label;
+  const displayOriginAddress = originCustomized ? originAddress : pref.address;
 
   useEffect(() => {
     const form = originBox.current?.closest("form");
     if (!form) return;
     const onSubmit = () => {
       if (!rememberOrigin) return;
-      writeOriginPref({ label: originLabel, address: originAddress });
+      writeOriginPref({
+        label: displayOriginLabel,
+        address: displayOriginAddress,
+      });
     };
     form.addEventListener("submit", onSubmit);
     return () => form.removeEventListener("submit", onSubmit);
-  }, [rememberOrigin, originLabel, originAddress]);
+  }, [rememberOrigin, displayOriginLabel, displayOriginAddress]);
 
   const primary = stops.find((s) => s.store.trim()) ?? stops[0];
   const doneCount = stops.filter((s) => s.done).length;
   const remaining = remainingStopCount(stops);
   const liveStatus = statusAfterStopProgress(vyjazdStatus, stops);
-  const origin = { originLabel, originAddress };
+  const origin = {
+    originLabel: displayOriginLabel,
+    originAddress: displayOriginAddress,
+  };
   const routeUrl = routeNavigationUrl(stops, origin);
   const filledCount = stops.filter((s) => s.store.trim() || s.address.trim()).length;
   const originFilled = Boolean(originQuery(origin));
   const canUsePref =
-    Boolean(savedPref && (savedPref.label || savedPref.address)) &&
-    (savedPref?.label !== originLabel.trim() ||
-      savedPref?.address !== originAddress.trim());
+    Boolean(pref.label || pref.address) &&
+    (pref.label !== displayOriginLabel.trim() ||
+      pref.address !== displayOriginAddress.trim());
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -220,9 +219,9 @@ export function VyjazdStopsEditor({
               type="button"
               className="btn btn-ghost"
               onClick={() => {
-                if (!savedPref) return;
-                setOriginLabel(savedPref.label);
-                setOriginAddress(savedPref.address);
+                setOriginLabel(pref.label);
+                setOriginAddress(pref.address);
+                setOriginCustomized(true);
               }}
             >
               Použiť predvolený
@@ -235,8 +234,14 @@ export function VyjazdStopsEditor({
             <input
               id="originLabel"
               name="originLabel"
-              value={originLabel}
-              onChange={(e) => setOriginLabel(e.target.value)}
+              value={displayOriginLabel}
+              onChange={(e) => {
+                if (!originCustomized) {
+                  setOriginAddress(displayOriginAddress);
+                }
+                setOriginCustomized(true);
+                setOriginLabel(e.target.value);
+              }}
               placeholder="napr. Domov, sklad, servis"
             />
           </div>
@@ -245,8 +250,14 @@ export function VyjazdStopsEditor({
             <input
               id="originAddress"
               name="originAddress"
-              value={originAddress}
-              onChange={(e) => setOriginAddress(e.target.value)}
+              value={displayOriginAddress}
+              onChange={(e) => {
+                if (!originCustomized) {
+                  setOriginLabel(displayOriginLabel);
+                }
+                setOriginCustomized(true);
+                setOriginAddress(e.target.value);
+              }}
               placeholder="ulica, mesto"
             />
           </div>
