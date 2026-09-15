@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SuggestionCard } from "@/components/suggestion-card";
 import {
   formatDateTime,
   priorityClass,
@@ -6,6 +7,7 @@ import {
   vyjazdStatusClass,
 } from "@/lib/format";
 import { getVyjazdStats, listVyjazdy } from "@/lib/store";
+import { listVyjazdSuggestions } from "@/lib/suggestions";
 import {
   PRIORITY_LABELS,
   VYJAZD_STATUS_LABELS,
@@ -56,9 +58,10 @@ export default async function VyjazdyPage({
       : "vsetky";
   const q = params.q ?? "";
 
-  const [vyjazdy, stats] = await Promise.all([
+  const [vyjazdy, stats, suggestions] = await Promise.all([
     listVyjazdy({ status, q }),
     getVyjazdStats(),
+    listVyjazdSuggestions({ limit: 6 }),
   ]);
 
   return (
@@ -111,6 +114,29 @@ export default async function VyjazdyPage({
           </strong>
         </div>
       </section>
+
+      {suggestions.length > 0 ? (
+        <section
+          className="panel fade-up space-y-4 p-4 md:p-5"
+          style={{ animationDelay: "90ms" }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-bold">Automatické návrhy výjazdov</h2>
+              <p className="text-sm text-[var(--ink-soft)]">
+                Z otvorených ticketov a Balena alertov. Vyber jednu z dvoch
+                možností — expresne alebo súhrnne.
+              </p>
+            </div>
+            <span className="chip chip-warn">{suggestions.length}</span>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {suggestions.map((suggestion) => (
+              <SuggestionCard key={suggestion.key} suggestion={suggestion} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section
         className="panel fade-up overflow-hidden"
