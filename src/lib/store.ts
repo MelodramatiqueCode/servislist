@@ -852,7 +852,7 @@ export async function createVyjazd(input: CreateVyjazdInput): Promise<Vyjazd> {
   const store = await readVyjazdStore();
   const timestamp = nowIso();
   const stops = stopsFromInput(input);
-  const vyjazd = syncLegacyVyjazdFields({
+  const vyjazd: Vyjazd = syncLegacyVyjazdFields({
     id: randomUUID(),
     number: store.nextNumber,
     title: input.title.trim(),
