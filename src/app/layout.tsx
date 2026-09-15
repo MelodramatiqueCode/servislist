@@ -40,6 +40,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Link href="/zariadenia" className="btn btn-ghost">
                 Zariadenia
               </Link>
+              <Link href="/vyjazdy" className="btn btn-ghost">
+                Výjazdy
+              </Link>
               <Link href="/novy" className="btn btn-primary">
                 + Nový problém
               </Link>

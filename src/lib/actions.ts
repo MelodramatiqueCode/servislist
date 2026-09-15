@@ -5,12 +5,20 @@ import { redirect } from "next/navigation";
 import {
   addTicketNote,
   createTicket,
+  createVyjazd,
+  deleteVyjazd,
   getDevice,
   updateTicketPriority,
   updateTicketStatus,
+  updateVyjazd,
+  updateVyjazdStatus,
 } from "./store";
 import { hardwareLabel } from "./parse-device";
-import type { TicketPriority, TicketStatus } from "./types";
+import type {
+  TicketPriority,
+  TicketStatus,
+  VyjazdStatus,
+} from "./types";
 
 function str(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -95,4 +103,118 @@ export async function addNoteAction(formData: FormData) {
   await addTicketNote(id, text, author);
   revalidatePath("/");
   revalidatePath(`/ticket/${id}`);
+}
+
+const VYJAZD_STATUSES: VyjazdStatus[] = [
+  "naplanovany",
+  "prebieha",
+  "hotovy",
+  "zruseny",
+];
+
+function vyjazdStatus(formData: FormData): VyjazdStatus {
+  const raw = str(formData, "status") as VyjazdStatus;
+  return VYJAZD_STATUSES.includes(raw) ? raw : "naplanovany";
+}
+
+async function enrichFromDevice(deviceUuid: string) {
+  if (!deviceUuid) return null;
+  return getDevice(deviceUuid);
+}
+
+export async function createVyjazdAction(formData: FormData) {
+  const title = str(formData, "title");
+  let store = str(formData, "store");
+  let address = str(formData, "address");
+  let contactPhone = str(formData, "contactPhone");
+  const technician = str(formData, "technician");
+  const scheduledAt = str(formData, "scheduledAt");
+  const priority = (str(formData, "priority") || "normalna") as TicketPriority;
+  const status = vyjazdStatus(formData);
+  const description = str(formData, "description");
+  const deviceUuid = str(formData, "deviceUuid");
+  const ticketId = str(formData, "ticketId");
+
+  const device = await enrichFromDevice(deviceUuid);
+  if (device) {
+    store =
+      store ||
+      [device.code && `#${device.code}`, device.partner, device.city]
+        .filter(Boolean)
+        .join(" · ") ||
+      device.name;
+    address = address || device.address;
+    contactPhone = contactPhone || device.phone;
+  }
+
+  if (!title || !store) {
+    throw new Error("Vyplň povinné polia: názov výjazdu a predajňu/zákazníka.");
+  }
+
+  const vyjazd = await createVyjazd({
+    title,
+    store,
+    address,
+    contactPhone,
+    technician,
+    scheduledAt,
+    status,
+    priority,
+    description,
+    deviceUuid,
+    ticketId,
+  });
+
+  revalidatePath("/vyjazdy");
+  if (deviceUuid) revalidatePath(`/zariadenia/${deviceUuid}`);
+  redirect(`/vyjazdy/${vyjazd.id}`);
+}
+
+export async function updateVyjazdAction(formData: FormData) {
+  const id = str(formData, "id");
+  if (!id) return;
+
+  const title = str(formData, "title");
+  const store = str(formData, "store");
+  if (!title || !store) {
+    throw new Error("Vyplň povinné polia: názov výjazdu a predajňu/zákazníka.");
+  }
+
+  await updateVyjazd(id, {
+    title,
+    store,
+    address: str(formData, "address"),
+    contactPhone: str(formData, "contactPhone"),
+    technician: str(formData, "technician") || "Nepriradené",
+    scheduledAt: str(formData, "scheduledAt"),
+    status: vyjazdStatus(formData),
+    priority: (str(formData, "priority") || "normalna") as TicketPriority,
+    description: str(formData, "description"),
+    result: str(formData, "result"),
+    deviceUuid: str(formData, "deviceUuid"),
+    ticketId: str(formData, "ticketId"),
+  });
+
+  revalidatePath("/vyjazdy");
+  revalidatePath(`/vyjazdy/${id}`);
+  redirect(`/vyjazdy/${id}?saved=1`);
+}
+
+export async function updateVyjazdStatusAction(formData: FormData) {
+  const id = str(formData, "id");
+  const status = vyjazdStatus(formData);
+  if (!id) return;
+
+  await updateVyjazdStatus(id, status);
+  revalidatePath("/vyjazdy");
+  revalidatePath(`/vyjazdy/${id}`);
+}
+
+export async function deleteVyjazdAction(formData: FormData) {
+  const id = str(formData, "id");
+  if (!id) return;
+
+  await deleteVyjazd(id);
+  revalidatePath("/vyjazdy");
+  redirect("/vyjazdy");
 }

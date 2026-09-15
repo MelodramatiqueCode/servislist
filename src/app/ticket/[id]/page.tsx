@@ -191,6 +191,19 @@ export default async function TicketDetailPage({
             </div>
           </div>
 
+          <div className="panel space-y-3 p-5">
+            <h2 className="text-lg font-bold">Výjazd</h2>
+            <p className="text-sm text-[var(--ink-soft)]">
+              Naplánuj servisný výjazd k tomuto ticketu.
+            </p>
+            <Link
+              href={`/vyjazdy/novy?ticket=${ticket.id}`}
+              className="btn btn-primary w-full"
+            >
+              + Naplánovať výjazd
+            </Link>
+          </div>
+
           <div className="panel space-y-4 p-5">
             <h2 className="text-lg font-bold">Priorita</h2>
             <form action={updatePriorityAction} className="space-y-3">

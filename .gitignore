@@ -44,5 +44,6 @@ next-env.d.ts
 # local ticket database
 /data/tickets.json
 /data/devices.json
+/data/vyjazdy.json
 !/data/.gitkeep
 !/data/balena-export.json

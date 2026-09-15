@@ -160,6 +160,12 @@ export default async function DeviceDetailPage({
             >
               + Nový problém
             </Link>
+            <Link
+              href={`/vyjazdy/novy?device=${device.uuid}`}
+              className="btn btn-ghost w-full"
+            >
+              + Naplánovať výjazd
+            </Link>
           </div>
 
           <div className="panel space-y-3 p-5">
