@@ -175,6 +175,16 @@ export async function ensureSchema() {
           PRIMARY KEY (device_uuid, alert_type)
         )
       `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS api_tokens (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          token_hash TEXT NOT NULL UNIQUE,
+          revoked_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          last_used_at TIMESTAMPTZ
+        )
+      `;
     })().catch((error) => {
       schemaReady = null;
       throw error;
@@ -592,4 +602,63 @@ export async function dbReadMassIncident(): Promise<MassIncidentState | null> {
 export async function dbWriteMassIncident(state: MassIncidentState | null) {
   await ensureSchema();
   await setMeta("mass_incident", state ? JSON.stringify(state) : "");
+}
+
+export type ApiTokenRow = {
+  id: string;
+  name: string;
+  tokenHash: string;
+  revokedAt: string | null;
+};
+
+export async function isApiTokenHashRevoked(tokenHash: string) {
+  if (!isDatabaseConfigured()) return false;
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT revoked_at
+    FROM api_tokens
+    WHERE token_hash = ${tokenHash}
+    LIMIT 1
+  `;
+  const revokedAt = (rows[0] as { revoked_at?: unknown } | undefined)?.revoked_at;
+  return Boolean(revokedAt);
+}
+
+export async function findApiTokenByHash(
+  tokenHash: string,
+): Promise<ApiTokenRow | null> {
+  if (!isDatabaseConfigured()) return null;
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, name, token_hash, revoked_at
+    FROM api_tokens
+    WHERE token_hash = ${tokenHash}
+    LIMIT 1
+  `;
+  const row = rows[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    tokenHash: String(row.token_hash),
+    revokedAt:
+      row.revoked_at instanceof Date
+        ? row.revoked_at.toISOString()
+        : row.revoked_at
+          ? String(row.revoked_at)
+          : null,
+  };
+}
+
+export async function touchApiTokenLastUsed(id: string) {
+  if (!isDatabaseConfigured()) return;
+  await ensureSchema();
+  const sql = getSql();
+  await sql`
+    UPDATE api_tokens
+    SET last_used_at = NOW()
+    WHERE id = ${id}
+  `;
 }

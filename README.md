@@ -44,7 +44,7 @@ npm run dev
 | `ALERT_MASS_MIN_DEVICES` | hromadný výpadok namiesto N ticketov |
 | `ALERT_HOT_OPEN_C` / `ALERT_HOT_CLOSE_C` | hysterézia Horúce CPU |
 | `ALERT_STORE_HOURS` | otváracie hodiny (predvolene `07:00-21:00`) |
-| `SUGGESTIONS_ENABLED` | auto-návrhy výjazdov (`0` predvolene) |
+| `SERVIS_BOT_API_TOKEN` | Bearer token pre Servis bot (história / tickety) |
 | `CRON_SECRET` | náhodný secret pre Vercel Cron |
 | `OSRM_URL` | voliteľné; predvolene `https://router.project-osrm.org` |
 | `NOMINATIM_URL` | voliteľné; predvolene `https://nominatim.openstreetmap.org` |

@@ -15,17 +15,53 @@ Predvolené hodnoty stačia na bežnú flotilu; všetko sa dá pretlačiť env p
 
 Zoskupenie ostáva: **jeden otvorený auto-ticket na zariadenie**, ďalšie alerty ako poznámky. Hromadný výpadok je samostatný fleet ticket.
 
-## Automatické návrhy (vypnuté)
+## Automatické návrhy — odstránené
 
-Auto-návrhy výjazdov (expres / trasa / okruh problematiky) sú **predvolene vypnuté** — zaberajú miesto a nepomáhajú.
+In-app auto-návrhy výjazdov (expres / trasa / okruh problematiky) sú **preč z kódu aj UI**. Návrhy bude robiť Servis bot cez API.
 
-Odstránené z UI:
+Zmazané:
 
+- `src/lib/suggestions.ts` (generovanie návrhov)
+- `src/components/suggestion-card.tsx`
 - `/vyjazdy` — blok „Automatické návrhy výjazdov“
 - `/zariadenia/[uuid]` — panel „Navrhovaný výjazd“
-- `/ticket/[id]` — automatický návrh v paneli Výjazd (ostal ručný odkaz „+ Naplánovať výjazd“)
+- `/ticket/[id]` — automatický návrh v paneli Výjazd (ostal ručný „+ Naplánovať výjazd“)
 
-`listVyjazdSuggestions` nič negeneruje, kým nie je `SUGGESTIONS_ENABLED=1`. Komponent `SuggestionCard` a logika v `src/lib/suggestions.ts` ostávajú v kóde. Existujúce tickety a výjazdy sa **nemažú**, žiadna tabuľka sa nedropuje.
+Existujúce tickety a výjazdy sa **nemažú**. Žiadna tabuľka sa nedropuje.
+
+### API pre Servis bot (história + otvorené tickety)
+
+Bearer token ako v API PR (`SERVIS_BOT_API_TOKEN`). Pri Deployment Protection aj `x-vercel-protection-bypass`.
+
+**`GET /api/v1/zariadenia/:uuid/udalosti?dni=7`** — história alertov a flap:
+
+```json
+{
+  "days": 7,
+  "counts": { "offline": 12, "hot": 0, "undervolt": 0 },
+  "flap": { "shortOffline": 5, "minCount": 5, "repeatedOutage": true },
+  "events": [{ "alertType": "offline", "outcome": "short", "startedAt": "…" }]
+}
+```
+
+**`GET /api/v1/prevadzky/otvorene-tickety?prevadzka=COOP&region=Martin`** — otvorené tickety zoskupené podľa prevádzky / regiónu (mesto):
+
+```json
+{
+  "count": 1,
+  "openTickets": 3,
+  "groups": [
+    {
+      "label": "#200 · JLM · Fiľakovo",
+      "region": "Fiľakovo",
+      "openCount": 3,
+      "tickets": [{ "code": "#0120", "title": "Offline: #200 Fiľakovo" }]
+    }
+  ]
+}
+```
+
+Query `prevadzka` filtruje predajňu, `region` / `mesto` / `city` filtruje mesto. Bez query vráti všetky skupiny.
 
 ## Env premenné
 
