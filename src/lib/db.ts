@@ -140,6 +140,25 @@ export async function ensureSchema() {
         VALUES ('devices_snapshot', '[]')
         ON CONFLICT (key) DO NOTHING
       `;
+      await sql`
+        ALTER TABLE tickets
+        ADD COLUMN IF NOT EXISTS client_ref TEXT
+      `;
+      await sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS tickets_client_ref_uidx
+        ON tickets (client_ref)
+        WHERE client_ref IS NOT NULL AND client_ref <> ''
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS api_tokens (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          token_hash TEXT NOT NULL UNIQUE,
+          revoked_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          last_used_at TIMESTAMPTZ
+        )
+      `;
     })().catch((error) => {
       schemaReady = null;
       throw error;
@@ -195,6 +214,7 @@ function rowToTicket(row: Record<string, unknown>): Ticket {
         : String(row.updated_at),
     source: (row.source as Ticket["source"]) || "manual",
     alertType: (row.alert_type as Ticket["alertType"]) || undefined,
+    clientRef: String(row.client_ref ?? "") || undefined,
   };
 }
 
@@ -226,7 +246,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         id, number, title, description,
         device_type, device_serial, device_uuid,
         customer_name, customer_phone, assigned_to,
-        status, priority, notes, source, alert_type,
+        status, priority, notes, source, alert_type, client_ref,
         created_at, updated_at
       ) VALUES (
         ${ticket.id},
@@ -244,6 +264,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         ${JSON.stringify(ticket.notes)}::jsonb,
         ${ticket.source || "manual"},
         ${ticket.alertType ?? null},
+        ${ticket.clientRef || null},
         ${ticket.createdAt}::timestamptz,
         ${ticket.updatedAt}::timestamptz
       )
@@ -262,6 +283,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         notes = EXCLUDED.notes,
         source = EXCLUDED.source,
         alert_type = EXCLUDED.alert_type,
+        client_ref = EXCLUDED.client_ref,
         updated_at = EXCLUDED.updated_at
     `;
   }
@@ -405,4 +427,63 @@ export async function dbWriteDeviceStore(store: DeviceStore) {
   await setMeta("devices_synced_at", store.syncedAt || "");
   await setMeta("devices_last_sync_error", store.lastSyncError || "");
   await setMeta("devices_snapshot", JSON.stringify(store.devices));
+}
+
+export type ApiTokenRow = {
+  id: string;
+  name: string;
+  tokenHash: string;
+  revokedAt: string | null;
+};
+
+export async function isApiTokenHashRevoked(tokenHash: string) {
+  if (!isDatabaseConfigured()) return false;
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT revoked_at
+    FROM api_tokens
+    WHERE token_hash = ${tokenHash}
+    LIMIT 1
+  `;
+  const revokedAt = (rows[0] as { revoked_at?: unknown } | undefined)?.revoked_at;
+  return Boolean(revokedAt);
+}
+
+export async function findApiTokenByHash(
+  tokenHash: string,
+): Promise<ApiTokenRow | null> {
+  if (!isDatabaseConfigured()) return null;
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, name, token_hash, revoked_at
+    FROM api_tokens
+    WHERE token_hash = ${tokenHash}
+    LIMIT 1
+  `;
+  const row = rows[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    tokenHash: String(row.token_hash),
+    revokedAt:
+      row.revoked_at instanceof Date
+        ? row.revoked_at.toISOString()
+        : row.revoked_at
+          ? String(row.revoked_at)
+          : null,
+  };
+}
+
+export async function touchApiTokenLastUsed(id: string) {
+  if (!isDatabaseConfigured()) return;
+  await ensureSchema();
+  const sql = getSql();
+  await sql`
+    UPDATE api_tokens
+    SET last_used_at = NOW()
+    WHERE id = ${id}
+  `;
 }

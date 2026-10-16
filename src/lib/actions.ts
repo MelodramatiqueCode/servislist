@@ -16,7 +16,11 @@ import {
   updateVyjazd,
   updateVyjazdStatus,
 } from "./store";
-import { hardwareLabel } from "./parse-device";
+import {
+  applyDeviceToTicketFields,
+  normalizePriority,
+  validateCreateTicket,
+} from "./ticket-input";
 import type {
   TicketPriority,
   TicketStatus,
@@ -30,52 +34,53 @@ function str(formData: FormData, key: string) {
 }
 
 export async function createTicketAction(formData: FormData) {
-  const title = str(formData, "title");
-  const description = str(formData, "description");
-  let deviceType = str(formData, "deviceType");
-  let deviceSerial = str(formData, "deviceSerial");
-  let customerName = str(formData, "customerName");
-  let customerPhone = str(formData, "customerPhone");
-  const assignedTo = str(formData, "assignedTo");
-  const priority = (str(formData, "priority") || "normalna") as TicketPriority;
-  const deviceUuid = str(formData, "deviceUuid");
+  let fields = {
+    title: str(formData, "title"),
+    description: str(formData, "description"),
+    deviceType: str(formData, "deviceType"),
+    deviceSerial: str(formData, "deviceSerial"),
+    deviceUuid: str(formData, "deviceUuid"),
+    customerName: str(formData, "customerName"),
+    customerPhone: str(formData, "customerPhone"),
+    assignedTo: str(formData, "assignedTo"),
+    priority: normalizePriority(str(formData, "priority")),
+    clientRef: "",
+  };
 
-  if (deviceUuid) {
-    const device = await getDevice(deviceUuid);
+  if (fields.deviceUuid) {
+    const device = await getDevice(fields.deviceUuid);
     if (device) {
-      deviceType = deviceType || hardwareLabel(device.deviceType);
-      deviceSerial = deviceSerial || device.uuid;
-      customerName =
-        customerName ||
-        [device.code && `#${device.code}`, device.partner, device.city]
-          .filter(Boolean)
-          .join(" · ") ||
-        device.name;
-      customerPhone = customerPhone || device.phone;
+      fields = {
+        ...fields,
+        ...applyDeviceToTicketFields(device, fields),
+        priority: fields.priority,
+        clientRef: "",
+      };
     }
   }
 
-  if (!title || !description || !deviceType || !customerName) {
+  const errors = validateCreateTicket(fields);
+  if (errors) {
     throw new Error(
       "Vyplň povinné polia: názov, popis, typ zariadenia a predajňa/zákazník.",
     );
   }
 
   const ticket = await createTicket({
-    title,
-    description,
-    deviceType,
-    deviceSerial,
-    deviceUuid,
-    customerName,
-    customerPhone,
-    assignedTo,
-    priority,
+    title: fields.title ?? "",
+    description: fields.description ?? "",
+    deviceType: fields.deviceType ?? "",
+    deviceSerial: fields.deviceSerial ?? "",
+    deviceUuid: fields.deviceUuid ?? "",
+    customerName: fields.customerName ?? "",
+    customerPhone: fields.customerPhone ?? "",
+    assignedTo: fields.assignedTo ?? "",
+    priority: fields.priority,
   });
 
   revalidatePath("/");
   revalidatePath("/zariadenia");
-  if (deviceUuid) revalidatePath(`/zariadenia/${deviceUuid}`);
+  if (fields.deviceUuid) revalidatePath(`/zariadenia/${fields.deviceUuid}`);
   redirect(`/ticket/${ticket.id}`);
 }
 

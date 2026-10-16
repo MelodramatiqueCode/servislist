@@ -1,0 +1,13 @@
+import { handleBotRoute, jsonOk, readJsonBody } from "@/lib/api-http";
+import { botChangeStatus } from "@/lib/bot-api";
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  return handleBotRoute(request, async (actor) => {
+    const { id } = await context.params;
+    const body = await readJsonBody(request);
+    return jsonOk(await botChangeStatus(id, body, actor));
+  });
+}
