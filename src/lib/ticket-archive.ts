@@ -6,6 +6,23 @@ export type ArchivedFilter = "hide" | "only" | "all";
 export const ARCHIVE_NOTE_TEXT =
   "Archivované pred nasadením nových pravidiel auto-ticketov (Balena). Ticket ostáva, nie je zmazaný.";
 
+/** Jednorazová in-app migrácia — všetky auto tickety pred týmto ISO (`<`, nie `<=`). */
+export const LEGACY_AUTO_ARCHIVE_CUTOFF = "2026-10-16T23:59:59.000Z";
+
+/** `app_meta` kľúč. Prítomnosť = migrácia už prebehla; value = počet archivovaných. */
+export const LEGACY_AUTO_ARCHIVE_META_KEY = "archive_auto_before_2026-10-16";
+
+export function mergeLegacyArchiveCounts(existing: string, incoming: string) {
+  const a = Number.parseInt(existing, 10);
+  const b = Number.parseInt(incoming, 10);
+  const aOk = Number.isFinite(a) && String(a) === existing.trim();
+  const bOk = Number.isFinite(b) && String(b) === incoming.trim();
+  if (aOk && bOk) return String(Math.max(a, b));
+  if (bOk) return incoming.trim();
+  if (aOk) return existing.trim();
+  return incoming.trim() || existing.trim();
+}
+
 export function isTicketArchived(ticket: { archivedAt?: string | null }) {
   return Boolean(ticket.archivedAt);
 }

@@ -10,6 +10,11 @@ import type {
   Vyjazd,
   VyjazdStore,
 } from "./types";
+import {
+  ARCHIVE_NOTE_TEXT,
+  LEGACY_AUTO_ARCHIVE_CUTOFF,
+  LEGACY_AUTO_ARCHIVE_META_KEY,
+} from "./ticket-archive";
 import { hydrateVyjazd } from "./vyjazd-stops";
 
 type Sql = NeonQueryFunction<false, false>;
@@ -201,6 +206,7 @@ export async function ensureSchema() {
           last_used_at TIMESTAMPTZ
         )
       `;
+      await archiveLegacyAutoTicketsOnce(sql);
     })().catch((error) => {
       schemaReady = null;
       throw error;
@@ -220,6 +226,50 @@ async function setMeta(key: string, value: string) {
   await sql`
     INSERT INTO app_meta (key, value) VALUES (${key}, ${value})
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+  `;
+}
+
+const ARCHIVE_NOTE_ID_SUFFIX = "-archive-2026-10-16";
+
+/**
+ * Jednorazová, race-safe archivácia starých Balena auto-ticketov.
+ * Jeden UPDATE ... WHERE archived_at IS NULL; ručné sa nedotkne; nič nemaže.
+ */
+async function archiveLegacyAutoTicketsOnce(sql: Sql) {
+  const existing = await getMeta(LEGACY_AUTO_ARCHIVE_META_KEY);
+  if (existing !== "") return;
+
+  const noteIdSuffix = ARCHIVE_NOTE_ID_SUFFIX;
+  const rows = await sql`
+    UPDATE tickets
+    SET
+      archived_at = NOW(),
+      updated_at = NOW(),
+      notes = COALESCE(notes, '[]'::jsonb) || jsonb_build_array(
+        jsonb_build_object(
+          'id', id || ${noteIdSuffix},
+          'text', ${ARCHIVE_NOTE_TEXT},
+          'author', 'Automat',
+          'createdAt', to_char(timezone('utc', NOW()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+        )
+      )
+    WHERE source = 'auto'
+      AND created_at < ${LEGACY_AUTO_ARCHIVE_CUTOFF}::timestamptz
+      AND archived_at IS NULL
+    RETURNING id
+  `;
+  const archived = rows.length;
+
+  await sql`
+    INSERT INTO app_meta (key, value)
+    VALUES (${LEGACY_AUTO_ARCHIVE_META_KEY}, ${String(archived)})
+    ON CONFLICT (key) DO UPDATE
+    SET value = CASE
+      WHEN EXCLUDED.value ~ '^[0-9]+$' AND app_meta.value ~ '^[0-9]+$'
+        THEN GREATEST(EXCLUDED.value::int, app_meta.value::int)::text
+      WHEN EXCLUDED.value ~ '^[0-9]+$' THEN EXCLUDED.value
+      ELSE app_meta.value
+    END
   `;
 }
 
