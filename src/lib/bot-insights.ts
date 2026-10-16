@@ -199,53 +199,6 @@ export async function botDeviceEventHistory(uuid: string, daysRaw?: string) {
   };
 }
 
-export async function botListTickets(url: URL) {
-  const archived = parseArchivedQuery(
-    queryString(url, "archiv", "archived", "archive"),
-  );
-  const statusRaw = queryString(url, "status") || "vsetky";
-  if (
-    statusRaw !== "vsetky" &&
-    statusRaw !== "aktivne" &&
-    statusRaw !== "otvorene" &&
-    statusRaw !== "v_rieseni" &&
-    statusRaw !== "caka_diely" &&
-    statusRaw !== "hotove"
-  ) {
-    throw new ApiError(
-      400,
-      "validation_error",
-      "Neplatný status. Použi otvorene, v_rieseni, caka_diely, hotove, aktivne alebo vsetky.",
-    );
-  }
-  const sourceRaw = queryString(url, "source") || "vsetky";
-  if (sourceRaw !== "vsetky" && sourceRaw !== "manual" && sourceRaw !== "auto") {
-    throw new ApiError(
-      400,
-      "validation_error",
-      "Neplatný source. Použi manual, auto alebo vsetky.",
-    );
-  }
-
-  let tickets = await listTickets({
-    status: statusRaw === "aktivne" ? "vsetky" : statusRaw,
-    source: sourceRaw,
-    q: queryString(url, "q", "hladaj"),
-    deviceUuid: queryString(url, "device", "deviceUuid", "zariadenie"),
-    archived,
-  });
-  if (statusRaw === "aktivne") {
-    tickets = tickets.filter((t) =>
-      OPEN_STATUSES.includes(t.status as TicketStatus),
-    );
-  }
-  return {
-    count: tickets.length,
-    archived: archived,
-    tickets: tickets.map(serializeOpenTicket),
-  };
-}
-
 export async function botOpenTicketsByLocation(url: URL) {
   const archived = parseArchivedQuery(
     queryString(url, "archiv", "archived", "archive"),

@@ -11,6 +11,7 @@ export type TicketNote = {
   text: string;
   author: string;
   createdAt: string;
+  clientRef?: string;
 };
 
 export type BalenaDeviceRaw = {
@@ -145,6 +146,7 @@ export type Ticket = {
   alertType?: TicketAlertType;
   /** ISO — prítomné = ticket je v archíve (stav ostáva, len sa schová zo zoznamu). */
   archivedAt?: string;
+  clientRef?: string;
 };
 
 export type CreateTicketInput = {
@@ -159,6 +161,7 @@ export type CreateTicketInput = {
   priority: TicketPriority;
   source?: TicketSource;
   alertType?: TicketAlertType;
+  clientRef?: string;
 };
 
 export type TicketStore = {

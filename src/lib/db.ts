@@ -151,6 +151,15 @@ export async function ensureSchema() {
         ON CONFLICT (key) DO NOTHING
       `;
       await sql`
+        ALTER TABLE tickets
+        ADD COLUMN IF NOT EXISTS client_ref TEXT
+      `;
+      await sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS tickets_client_ref_uidx
+        ON tickets (client_ref)
+        WHERE client_ref IS NOT NULL AND client_ref <> ''
+      `;
+      await sql`
         CREATE TABLE IF NOT EXISTS device_events (
           id TEXT PRIMARY KEY,
           device_uuid TEXT NOT NULL,
@@ -252,6 +261,7 @@ function rowToTicket(row: Record<string, unknown>): Ticket {
         ? row.archived_at.toISOString()
         : String(row.archived_at)
       : undefined,
+    clientRef: String(row.client_ref ?? "") || undefined,
   };
 }
 
@@ -283,7 +293,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         id, number, title, description,
         device_type, device_serial, device_uuid,
         customer_name, customer_phone, assigned_to,
-        status, priority, notes, source, alert_type, archived_at,
+        status, priority, notes, source, alert_type, archived_at, client_ref,
         created_at, updated_at
       ) VALUES (
         ${ticket.id},
@@ -302,6 +312,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         ${ticket.source || "manual"},
         ${ticket.alertType ?? null},
         ${ticket.archivedAt ?? null}::timestamptz,
+        ${ticket.clientRef || null},
         ${ticket.createdAt}::timestamptz,
         ${ticket.updatedAt}::timestamptz
       )
@@ -321,6 +332,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         source = EXCLUDED.source,
         alert_type = EXCLUDED.alert_type,
         archived_at = EXCLUDED.archived_at,
+        client_ref = EXCLUDED.client_ref,
         updated_at = EXCLUDED.updated_at
     `;
   }
