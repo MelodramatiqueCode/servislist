@@ -45,6 +45,7 @@ export function serializeTicket(ticket: Ticket) {
     updatedAt: ticket.updatedAt,
     source: ticket.source ?? "manual",
     alertType: ticket.alertType,
+    archivedAt: ticket.archivedAt,
     clientRef: ticket.clientRef || undefined,
   };
 }

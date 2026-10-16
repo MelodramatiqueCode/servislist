@@ -11,9 +11,9 @@ import {
   statusClass,
   ticketCode,
 } from "@/lib/format";
-import { SuggestionCard } from "@/components/suggestion-card";
+import { TICKET_ALERT_LABELS } from "@/lib/alerts";
 import { getDevice, getTicket } from "@/lib/store";
-import { listVyjazdSuggestions } from "@/lib/suggestions";
+import { isTicketArchived } from "@/lib/ticket-archive";
 import {
   PRIORITY_LABELS,
   STATUS_LABELS,
@@ -35,14 +35,16 @@ export default async function TicketDetailPage({
   const linkedDevice = ticket.deviceUuid
     ? await getDevice(ticket.deviceUuid)
     : null;
-  const suggestions = await listVyjazdSuggestions({ ticketId: id, limit: 1 });
-  const suggestion = suggestions[0] ?? null;
+  const archived = isTicketArchived(ticket);
 
   return (
     <div className="shell max-w-4xl space-y-6">
       <div className="fade-up space-y-3">
-        <Link href="/" className="text-sm font-semibold text-[var(--teal)]">
-          ← Späť na tickety
+        <Link
+          href={archived ? "/?archiv=1" : "/"}
+          className="text-sm font-semibold text-[var(--teal)]"
+        >
+          {archived ? "← Späť do archívu" : "← Späť na tickety"}
         </Link>
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-display text-sm font-bold text-[var(--teal-deep)]">
@@ -57,9 +59,12 @@ export default async function TicketDetailPage({
           {ticket.source === "auto" ? (
             <span className="chip chip-warn">
               Auto
-              {ticket.alertType ? ` · ${ticket.alertType}` : ""}
+              {ticket.alertType
+                ? ` · ${TICKET_ALERT_LABELS[ticket.alertType] ?? ticket.alertType}`
+                : ""}
             </span>
           ) : null}
+          {archived ? <span className="chip chip-overdue">Archív</span> : null}
         </div>
         <h1 className="text-3xl font-extrabold leading-tight md:text-4xl">
           {ticket.title}
@@ -141,6 +146,11 @@ export default async function TicketDetailPage({
               </ul>
             )}
 
+            {archived ? (
+              <p className="text-sm text-[var(--ink-soft)]">
+                Archivovaný ticket je len na čítanie.
+              </p>
+            ) : (
             <form action={addNoteAction} className="space-y-3 pt-2">
               <input type="hidden" name="id" value={ticket.id} />
               <div className="field">
@@ -165,6 +175,7 @@ export default async function TicketDetailPage({
                 Pridať poznámku
               </button>
             </form>
+            )}
           </div>
         </section>
 
@@ -174,6 +185,13 @@ export default async function TicketDetailPage({
         >
           <div className="panel space-y-4 p-5">
             <h2 className="text-lg font-bold">Stav ticketu</h2>
+            {archived ? (
+              <p className="text-sm text-[var(--ink-soft)]">
+                Archivovaný ticket sa nemení — stav ostáva{" "}
+                {STATUS_LABELS[ticket.status]}.
+              </p>
+            ) : (
+              <>
             <p className="text-sm text-[var(--ink-soft)]">
               Posuň ticket ako v to-do liste — otvorené → v riešení → hotové.
             </p>
@@ -193,41 +211,30 @@ export default async function TicketDetailPage({
                 </form>
               ))}
             </div>
-          </div>
-
-          <div className="panel space-y-3 p-5">
-            <h2 className="text-lg font-bold">Výjazd</h2>
-            {suggestion ? (
-              <>
-                <p className="text-sm text-[var(--ink-soft)]">
-                  Automatický návrh výjazdu — expres (táto prevádzka) alebo
-                  trasa, ak sú v okolí ďalšie signály.
-                </p>
-                <SuggestionCard suggestion={suggestion} compact />
-                <Link
-                  href={`/vyjazdy/novy?ticket=${ticket.id}`}
-                  className="btn btn-ghost w-full"
-                >
-                  Alebo naplánovať ručne
-                </Link>
-              </>
-            ) : (
-              <>
-                <p className="text-sm text-[var(--ink-soft)]">
-                  Naplánuj servisný výjazd k tomuto ticketu.
-                </p>
-                <Link
-                  href={`/vyjazdy/novy?ticket=${ticket.id}`}
-                  className="btn btn-primary w-full"
-                >
-                  + Naplánovať výjazd
-                </Link>
               </>
             )}
           </div>
 
+          {archived ? null : (
+          <div className="panel space-y-3 p-5">
+            <h2 className="text-lg font-bold">Výjazd</h2>
+            <p className="text-sm text-[var(--ink-soft)]">
+              Naplánuj servisný výjazd k tomuto ticketu.
+            </p>
+            <Link
+              href={`/vyjazdy/novy?ticket=${ticket.id}`}
+              className="btn btn-primary w-full"
+            >
+              + Naplánovať výjazd
+            </Link>
+          </div>
+          )}
+
           <div className="panel space-y-4 p-5">
             <h2 className="text-lg font-bold">Priorita</h2>
+            {archived ? (
+              <p className="font-semibold">{PRIORITY_LABELS[ticket.priority]}</p>
+            ) : (
             <form action={updatePriorityAction} className="space-y-3">
               <input type="hidden" name="id" value={ticket.id} />
               <div className="field">
@@ -250,6 +257,7 @@ export default async function TicketDetailPage({
                 Uložiť prioritu
               </button>
             </form>
+            )}
           </div>
         </aside>
       </div>

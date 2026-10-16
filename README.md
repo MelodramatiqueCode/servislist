@@ -40,12 +40,26 @@ npm run dev
 | `BALENA_FLEET_SLUG` | napr. `ceo2/massiva` |
 | `ALERT_AUTO_TICKETS` | `1` / `0` |
 | `ALERT_AUTO_CLOSE` | `1` / `0` |
+| `ALERT_OFFLINE_GRACE_MINUTES` | offline ticket až po N min (predvolene 15) |
+| `ALERT_MASS_MIN_DEVICES` | hromadný výpadok namiesto N ticketov |
+| `ALERT_HOT_OPEN_C` / `ALERT_HOT_CLOSE_C` | hysterézia Horúce CPU |
+| `ALERT_STORE_HOURS` | otváracie hodiny (predvolene `07:00-21:00`) |
+| `SERVIS_BOT_API_TOKEN` | Bearer token pre Servis bot (história / tickety) |
 | `CRON_SECRET` | náhodný secret pre Vercel Cron |
 | `SERVIS_BOT_API_TOKEN` | Bearer token pre Servis bot (API) |
 | `HOTLINE_BOT_API_TOKEN` | Bearer token pre Hotline bot (API) |
 | `OSRM_URL` | voliteľné; predvolene `https://router.project-osrm.org` |
 | `NOMINATIM_URL` | voliteľné; predvolene `https://nominatim.openstreetmap.org` |
 | `OSM_USER_AGENT` | voliteľné; identifikácia voči Nominatim |
+
+Podrobnosti, archív a odhad septembrového šumu: [docs/ALERT-hluk.md](docs/ALERT-hluk.md).
+
+Archivácia starých auto-ticketov (až po merge, nie z tohto agenta):
+
+```bash
+DATABASE_URL='…' npm run tickets:archive:dry -- --before=2026-10-16T23:59:59.000Z
+DATABASE_URL='…' npm run tickets:archive -- --before=2026-10-16T23:59:59.000Z
+```
 
 Odhad vzdialenosti a času trasy ide cez **OpenStreetMap** (Nominatim geocode + OSRM route), nie cez Google Maps billing. Apka beží aj bez týchto premenných. Ak verejné demo servery zlyhajú, v UI sa ukáže „Vzdialenosť sa nepodarilo spočítať“ a výjazd sa aj tak uloží. Pre produkčnú záťaž môžeš nasadiť vlastný OSRM/Nominatim a nastaviť URL.
 
@@ -74,7 +88,7 @@ curl -X POST "https://YOUR_APP.vercel.app/api/sync-balena?force=1" \
 ## Čo vie
 
 - Katalóg Balena zariadení (online/offline, undervolt, teplota, disk, VPN)
-- Live sync + auto-tickety pri nových health alertaoch
+- Live sync + auto-tickety pri health alertoch (grace, hromadný výpadok, hysterézia CPU, otváracie hodiny — [docs/ALERT-hluk.md](docs/ALERT-hluk.md))
 - Tickety naviazané na UUID zariadenia, poznámky, priority
-- Servisné výjazdy ako trasa po prevádzkach (zastávky, ticknutie, návrh trasy)
+- Servisné výjazdy ako trasa po prevádzkach (zastávky, ticknutie, ručné plánovanie)
 - Odhad jazdy po trase (~km a ~čas) z OSM/OSRM, bez Google Maps účtu

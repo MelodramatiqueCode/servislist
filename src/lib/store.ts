@@ -10,17 +10,16 @@ import {
   dbWriteVyjazdStore,
   isDatabaseConfigured,
 } from "./db";
+import { getAlertConfig, isAlertsEnabled } from "./alert-config";
+import { reconcileAlerts } from "./alert-reconcile";
 import {
-  ALERT_LABELS,
-  activationNote,
-  alertPriority,
-  buildAlertTicket,
-  detectActiveAlerts,
-  isAlertAutoCloseEnabled,
-  isAlertsEnabled,
-  recoveryNote,
-  type AlertType,
-} from "./alerts";
+  listDeviceEvents,
+  readAlertPending,
+  readMassIncident,
+  upsertDeviceEvents,
+  writeAlertPending,
+  writeMassIncident,
+} from "./alert-state";
 import {
   fetchBalenaFleetDevices,
   getBalenaConfig,
@@ -59,6 +58,12 @@ import {
   vyjazdTicketIds,
 } from "./vyjazd-stops";
 import { estimateDrivingRoute, routeFingerprint } from "./route-estimate";
+import {
+  archiveLegacyAutoTickets as applyArchiveLegacyAutoTickets,
+  isTicketArchived,
+  matchesArchivedFilter,
+  type ArchivedFilter,
+} from "./ticket-archive";
 import { inDateRange, parseTicketRef, parseVyjazdRef } from "./refs";
 import {
   buildPrevadzky,
@@ -87,6 +92,8 @@ function vyjazdyFile() {
 }
 
 const STALE_MS = 2 * 60 * 1000;
+
+const OPEN_STATUSES: TicketStatus[] = ["otvorene", "v_rieseni", "caka_diely"];
 
 function nowIso() {
   return new Date().toISOString();
@@ -136,6 +143,7 @@ async function readTicketStore(): Promise<TicketStore> {
     ...t,
     deviceUuid: t.deviceUuid ?? "",
     source: t.source ?? "manual",
+    archivedAt: t.archivedAt || undefined,
     clientRef: t.clientRef || undefined,
   }));
   return store;
@@ -264,37 +272,6 @@ export type SyncResult = {
   configured: boolean;
 };
 
-const OPEN_STATUSES: TicketStatus[] = ["otvorene", "v_rieseni", "caka_diely"];
-
-const ALERT_PRIORITY_RANK: Record<TicketPriority, number> = {
-  nizka: 0,
-  normalna: 1,
-  vysoka: 2,
-  urgentna: 3,
-};
-
-function findOpenAutoTicket(store: TicketStore, deviceUuid: string) {
-  return store.tickets.find(
-    (t) =>
-      t.source === "auto" &&
-      t.deviceUuid === deviceUuid &&
-      OPEN_STATUSES.includes(t.status),
-  );
-}
-
-function highestAlert(types: AlertType[]): AlertType {
-  return types.reduce((best, type) =>
-    ALERT_PRIORITY_RANK[alertPriority(type)] >
-    ALERT_PRIORITY_RANK[alertPriority(best)]
-      ? type
-      : best,
-  );
-}
-
-function autoNote(text: string, createdAt: string): TicketNote {
-  return { id: randomUUID(), text, author: "Automat", createdAt };
-}
-
 export async function reconcileDeviceAlerts(
   previous: ServiceDevice[],
   current: ServiceDevice[],
@@ -303,109 +280,43 @@ export async function reconcileDeviceAlerts(
     return { created: 0, resolved: 0 };
   }
 
-  const prevMap = new Map(previous.map((d) => [d.uuid, d]));
-  const store = await readTicketStore();
-  const autoClose = isAlertAutoCloseEnabled();
-  let created = 0;
-  let resolved = 0;
-  let dirty = false;
-  const timestamp = nowIso();
+  const config = getAlertConfig();
+  const now = new Date();
+  const since = new Date(
+    now.getTime() - Math.max(config.flapWindowDays, 14) * 24 * 60 * 60 * 1000,
+  ).toISOString();
 
-  for (const device of current) {
-    const prev = prevMap.get(device.uuid);
+  const [store, pending, events, mass] = await Promise.all([
+    readTicketStore(),
+    readAlertPending(),
+    listDeviceEvents({ sinceIso: since }),
+    readMassIncident(),
+  ]);
 
-    const activeNow = detectActiveAlerts(device);
-    const activePrev = prev ? detectActiveAlerts(prev) : [];
-    const prevSet = new Set(activePrev);
-    const nowSet = new Set(activeNow);
-    const newlyActive = activeNow.filter((type) => !prevSet.has(type));
-    const newlyCleared = activePrev.filter((type) => !nowSet.has(type));
+  const result = reconcileAlerts({
+    previous,
+    current,
+    tickets: store,
+    pending,
+    events,
+    mass,
+    config,
+    now,
+  });
 
-    if (newlyActive.length === 0 && newlyCleared.length === 0) {
-      continue;
-    }
+  await Promise.all([
+    writeTicketStore(result.tickets),
+    writeAlertPending(result.pending),
+    upsertDeviceEvents(result.events),
+    writeMassIncident(result.mass),
+  ]);
 
-    let open = findOpenAutoTicket(store, device.uuid);
+  return { created: result.created, resolved: result.resolved };
+}
 
-    // A newly active alert on a device without an open auto-ticket opens ONE
-    // grouped ticket; otherwise we append notes to the existing ticket.
-    if (newlyActive.length > 0) {
-      if (!open) {
-        const primary = highestAlert(newlyActive);
-        const input = buildAlertTicket(device, primary);
-        const ticket: Ticket = {
-          id: randomUUID(),
-          number: store.nextNumber,
-          title: input.title,
-          description: input.description,
-          deviceType: input.deviceType,
-          deviceSerial: input.deviceSerial,
-          deviceUuid: input.deviceUuid,
-          customerName: input.customerName,
-          customerPhone: input.customerPhone,
-          assignedTo: input.assignedTo,
-          status: "otvorene",
-          priority: input.priority,
-          notes: [],
-          createdAt: timestamp,
-          updatedAt: timestamp,
-          source: "auto",
-          alertType: primary,
-        };
-
-        const others = activeNow.filter((type) => type !== primary);
-        if (others.length > 0) {
-          ticket.notes.push(
-            autoNote(
-              `Pri vytvorení ticketu boli aktívne aj: ${others
-                .map((type) => ALERT_LABELS[type])
-                .join(", ")}.`,
-              timestamp,
-            ),
-          );
-        }
-
-        store.nextNumber += 1;
-        store.tickets.unshift(ticket);
-        created += 1;
-        dirty = true;
-        open = ticket;
-      } else {
-        for (const type of newlyActive) {
-          open.notes.push(autoNote(activationNote(type, device), timestamp));
-          if (
-            ALERT_PRIORITY_RANK[alertPriority(type)] >
-            ALERT_PRIORITY_RANK[open.priority]
-          ) {
-            open.priority = alertPriority(type);
-            open.alertType = type;
-          }
-        }
-        open.updatedAt = timestamp;
-        dirty = true;
-      }
-    }
-
-    // Cleared alerts add a recovery note; the ticket only auto-closes once
-    // NO alert types remain active on the device.
-    if (newlyCleared.length > 0 && open) {
-      for (const type of newlyCleared) {
-        open.notes.push(autoNote(recoveryNote(type, device), timestamp));
-        resolved += 1;
-      }
-      open.updatedAt = timestamp;
-      if (activeNow.length === 0 && autoClose) {
-        open.status = "hotove";
-      }
-      dirty = true;
-    }
-  }
-
-  if (dirty) {
-    await writeTicketStore(store);
-  }
-
-  return { created, resolved };
+export async function listDeviceAlertEvents(deviceUuid: string, days = 7) {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  return listDeviceEvents({ deviceUuid, sinceIso: since });
 }
 
 export async function syncFromBalenaCloud(options?: {
@@ -613,7 +524,7 @@ export async function getDeviceStats() {
     online: all.filter((d) => d.isOnline).length,
     offline: all.filter((d) => !d.isOnline).length,
     undervolt: all.filter((d) => d.isUndervolted).length,
-    hot: all.filter((d) => isHot(d)).length,
+    hot: all.filter((d) => isHot(d, getAlertConfig().hotOpenC)).length,
     disk: all.filter((d) => isDiskFull(d)).length,
     alerts: all.filter((d) =>
       matchesHealthFilter(d, "alerts"),
@@ -632,6 +543,7 @@ export async function listTickets(filters?: {
   source?: TicketSource | "vsetky";
   q?: string;
   deviceUuid?: string;
+  archived?: ArchivedFilter;
   prevadzka?: string;
   from?: string;
   to?: string;
@@ -639,6 +551,8 @@ export async function listTickets(filters?: {
 }): Promise<Ticket[]> {
   const store = await readTicketStore();
   let tickets = [...store.tickets];
+  const archived = filters?.archived ?? "hide";
+  tickets = tickets.filter((t) => matchesArchivedFilter(t, archived));
 
   if (filters?.status && filters.status !== "vsetky") {
     if (filters.status === "aktivne") {
@@ -777,6 +691,7 @@ export async function updateTicketStatus(
   const store = await readTicketStore();
   const ticket = store.tickets.find((t) => t.id === id);
   if (!ticket) return null;
+  if (isTicketArchived(ticket)) return ticket;
   const previous = ticket.status;
   ticket.status = status;
   const timestamp = nowIso();
@@ -802,6 +717,7 @@ export async function updateTicketPriority(
   const store = await readTicketStore();
   const ticket = store.tickets.find((t) => t.id === id);
   if (!ticket) return null;
+  if (isTicketArchived(ticket)) return ticket;
   ticket.priority = priority;
   ticket.updatedAt = nowIso();
   await writeTicketStore(store);
@@ -817,6 +733,7 @@ export async function addTicketNote(
   const store = await readTicketStore();
   const ticket = store.tickets.find((t) => t.id === id);
   if (!ticket) return null;
+  if (isTicketArchived(ticket)) return ticket;
 
   const clientRef = opts?.clientRef?.trim() || "";
   if (clientRef) {
@@ -839,13 +756,37 @@ export async function addTicketNote(
 }
 
 export async function getStats() {
-  const tickets = await listTickets();
+  const tickets = await listTickets({ archived: "hide" });
+  const archived = await listTickets({ archived: "only" });
   return {
     total: tickets.length,
     otvorene: tickets.filter((t) => t.status === "otvorene").length,
     v_rieseni: tickets.filter((t) => t.status === "v_rieseni").length,
     caka_diely: tickets.filter((t) => t.status === "caka_diely").length,
     hotove: tickets.filter((t) => t.status === "hotove").length,
+    archived: archived.length,
+  };
+}
+
+export async function archiveLegacyAutoTickets(opts?: {
+  before?: Date;
+  dryRun?: boolean;
+}) {
+  const before = opts?.before ?? new Date();
+  const store = await readTicketStore();
+  const result = applyArchiveLegacyAutoTickets(store.tickets, before);
+  if (!opts?.dryRun && result.archived > 0) {
+    store.tickets = result.tickets;
+    await writeTicketStore(store);
+  }
+  return {
+    archived: result.archived,
+    before: before.toISOString(),
+    dryRun: Boolean(opts?.dryRun),
+    totalAutoBefore: store.tickets.filter((t) =>
+      (t.source ?? "manual") === "auto" &&
+      new Date(t.createdAt).getTime() < before.getTime(),
+    ).length,
   };
 }
 

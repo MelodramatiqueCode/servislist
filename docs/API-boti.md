@@ -102,7 +102,7 @@ curl -sS https://servislist.vercel.app/api/v1 \
 
 ### `GET /api/v1/tickets` — zoznam
 
-Query: `status` (`otvorene` \| `v_rieseni` \| `caka_diely` \| `hotove` \| `aktivne` \| `vsetky`), `source` (`manual` \| `auto` \| `vsetky`), `device` / `deviceUuid`, `prevadzka`, `q`, `od` / `do` (ISO alebo `YYYY-MM-DD`), `dateField` (`updatedAt` predvolene, `createdAt`).
+Query: `status` (`otvorene` \| `v_rieseni` \| `caka_diely` \| `hotove` \| `aktivne` \| `vsetky`), `source` (`manual` \| `auto` \| `vsetky`), `device` / `deviceUuid`, `prevadzka`, `q`, `od` / `do` (ISO alebo `YYYY-MM-DD`), `dateField` (`updatedAt` predvolene, `createdAt`), `archiv` (`hide` predvolene — bez archívu, `only`, `all` / `1`).
 
 `aktivne` = všetko okrem Hotové.
 

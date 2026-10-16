@@ -26,6 +26,7 @@ import {
   TICKET_PRIORITIES,
   validateCreateTicket,
 } from "./ticket-input";
+import { parseArchivedQuery } from "./ticket-archive";
 import type { Ticket, TicketSource, VyjazdStatus } from "./types";
 import { VYJAZD_STATUS_LABELS } from "./types";
 
@@ -107,6 +108,10 @@ export async function botListTickets(url: URL) {
       ? "createdAt"
       : "updatedAt";
 
+  const archived = parseArchivedQuery(
+    queryString(url, "archiv", "archived", "archive"),
+  );
+
   const tickets = await listTickets({
     status,
     source: sourceRaw as TicketSource | "vsetky",
@@ -116,10 +121,12 @@ export async function botListTickets(url: URL) {
     from: queryString(url, "od", "from"),
     to: queryString(url, "do", "to"),
     dateField,
+    archived,
   });
 
   return {
     count: tickets.length,
+    archived,
     tickets: tickets.map(serializeTicket),
   };
 }

@@ -1,3 +1,4 @@
+import { getAlertConfig } from "./alert-config";
 import type { BalenaDeviceRaw, ServiceDevice } from "./types";
 
 const PHONE_RE =
@@ -176,8 +177,11 @@ export function storageLabel(device: ServiceDevice) {
   return `${formatBytesMb(device.storageUsage)} / ${formatBytesMb(device.storageTotal)} (${formatPercent(device.storageUsage, device.storageTotal)})`;
 }
 
-export function isHot(device: ServiceDevice) {
-  return device.cpuTemp != null && device.cpuTemp >= 80;
+export function isHot(
+  device: ServiceDevice,
+  thresholdC = getAlertConfig().hotOpenC,
+) {
+  return device.cpuTemp != null && device.cpuTemp >= thresholdC;
 }
 
 export function isDiskFull(device: ServiceDevice) {
@@ -193,7 +197,7 @@ export function hasHealthAlert(device: ServiceDevice) {
   return (
     !device.isOnline ||
     device.isUndervolted ||
-    isHot(device) ||
+    isHot(device, getAlertConfig().hotOpenC) ||
     isDiskFull(device)
   );
 }
@@ -222,7 +226,7 @@ export function matchesHealthFilter(
     case "undervolt":
       return device.isUndervolted;
     case "hot":
-      return isHot(device);
+      return isHot(device, getAlertConfig().hotOpenC);
     case "disk":
       return isDiskFull(device);
     case "alerts":

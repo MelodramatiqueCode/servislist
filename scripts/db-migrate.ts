@@ -10,7 +10,7 @@ async function main() {
 
   await ensureSchema();
   console.log(
-    "Schema OK — tabuľky tickets + vyjazdy + api_tokens + app_meta sú pripravené (vrátane client_ref, stops, route a origin).",
+    "Schema OK — tickets (archived_at, client_ref) + vyjazdy + device_events + alert_pending + api_tokens + app_meta.",
   );
 }
 

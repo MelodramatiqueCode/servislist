@@ -1,6 +1,9 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 import type {
+  AlertPending,
+  DeviceEvent,
   DeviceStore,
+  MassIncidentState,
   ServiceDevice,
   Ticket,
   TicketStore,
@@ -79,6 +82,13 @@ export async function ensureSchema() {
         CREATE INDEX IF NOT EXISTS tickets_device_uuid_idx ON tickets (device_uuid)
       `;
       await sql`
+        ALTER TABLE tickets
+        ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS tickets_archived_at_idx ON tickets (archived_at)
+      `;
+      await sql`
         CREATE INDEX IF NOT EXISTS tickets_alert_open_idx
         ON tickets (source, alert_type, device_uuid, status)
       `;
@@ -150,6 +160,38 @@ export async function ensureSchema() {
         WHERE client_ref IS NOT NULL AND client_ref <> ''
       `;
       await sql`
+        CREATE TABLE IF NOT EXISTS device_events (
+          id TEXT PRIMARY KEY,
+          device_uuid TEXT NOT NULL,
+          alert_type TEXT NOT NULL,
+          started_at TIMESTAMPTZ NOT NULL,
+          ended_at TIMESTAMPTZ,
+          duration_seconds INTEGER,
+          outcome TEXT NOT NULL DEFAULT 'open',
+          ticket_id TEXT NOT NULL DEFAULT '',
+          note TEXT NOT NULL DEFAULT ''
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS device_events_device_started_idx
+        ON device_events (device_uuid, started_at DESC)
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS device_events_type_started_idx
+        ON device_events (alert_type, started_at DESC)
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS alert_pending (
+          device_uuid TEXT NOT NULL,
+          alert_type TEXT NOT NULL,
+          first_seen_at TIMESTAMPTZ NOT NULL,
+          last_seen_at TIMESTAMPTZ NOT NULL,
+          in_hours_since TIMESTAMPTZ,
+          event_id TEXT NOT NULL DEFAULT '',
+          PRIMARY KEY (device_uuid, alert_type)
+        )
+      `;
+      await sql`
         CREATE TABLE IF NOT EXISTS api_tokens (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
@@ -214,6 +256,11 @@ function rowToTicket(row: Record<string, unknown>): Ticket {
         : String(row.updated_at),
     source: (row.source as Ticket["source"]) || "manual",
     alertType: (row.alert_type as Ticket["alertType"]) || undefined,
+    archivedAt: row.archived_at
+      ? row.archived_at instanceof Date
+        ? row.archived_at.toISOString()
+        : String(row.archived_at)
+      : undefined,
     clientRef: String(row.client_ref ?? "") || undefined,
   };
 }
@@ -246,7 +293,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         id, number, title, description,
         device_type, device_serial, device_uuid,
         customer_name, customer_phone, assigned_to,
-        status, priority, notes, source, alert_type, client_ref,
+        status, priority, notes, source, alert_type, archived_at, client_ref,
         created_at, updated_at
       ) VALUES (
         ${ticket.id},
@@ -264,6 +311,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         ${JSON.stringify(ticket.notes)}::jsonb,
         ${ticket.source || "manual"},
         ${ticket.alertType ?? null},
+        ${ticket.archivedAt ?? null}::timestamptz,
         ${ticket.clientRef || null},
         ${ticket.createdAt}::timestamptz,
         ${ticket.updatedAt}::timestamptz
@@ -283,6 +331,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         notes = EXCLUDED.notes,
         source = EXCLUDED.source,
         alert_type = EXCLUDED.alert_type,
+        archived_at = EXCLUDED.archived_at,
         client_ref = EXCLUDED.client_ref,
         updated_at = EXCLUDED.updated_at
     `;
@@ -427,6 +476,158 @@ export async function dbWriteDeviceStore(store: DeviceStore) {
   await setMeta("devices_synced_at", store.syncedAt || "");
   await setMeta("devices_last_sync_error", store.lastSyncError || "");
   await setMeta("devices_snapshot", JSON.stringify(store.devices));
+}
+
+function rowToDeviceEvent(row: Record<string, unknown>): DeviceEvent {
+  return {
+    id: String(row.id),
+    deviceUuid: String(row.device_uuid ?? ""),
+    alertType: row.alert_type as DeviceEvent["alertType"],
+    startedAt:
+      row.started_at instanceof Date
+        ? row.started_at.toISOString()
+        : String(row.started_at),
+    endedAt: row.ended_at
+      ? row.ended_at instanceof Date
+        ? row.ended_at.toISOString()
+        : String(row.ended_at)
+      : null,
+    durationSeconds:
+      row.duration_seconds == null ? null : Number(row.duration_seconds),
+    outcome: (row.outcome as DeviceEvent["outcome"]) || "open",
+    ticketId: String(row.ticket_id ?? ""),
+    note: String(row.note ?? ""),
+  };
+}
+
+export async function dbListDeviceEvents(opts?: {
+  deviceUuid?: string;
+  sinceIso?: string;
+}): Promise<DeviceEvent[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const since = opts?.sinceIso ?? "";
+  const uuid = opts?.deviceUuid ?? "";
+  const rows = uuid
+    ? since
+      ? await sql`
+          SELECT * FROM device_events
+          WHERE device_uuid = ${uuid} AND started_at >= ${since}::timestamptz
+          ORDER BY started_at DESC
+        `
+      : await sql`
+          SELECT * FROM device_events
+          WHERE device_uuid = ${uuid}
+          ORDER BY started_at DESC
+        `
+    : since
+      ? await sql`
+          SELECT * FROM device_events
+          WHERE started_at >= ${since}::timestamptz
+          ORDER BY started_at DESC
+        `
+      : await sql`
+          SELECT * FROM device_events
+          ORDER BY started_at DESC
+          LIMIT 5000
+        `;
+  return rows.map((row) => rowToDeviceEvent(row as Record<string, unknown>));
+}
+
+export async function dbUpsertDeviceEvents(events: DeviceEvent[]) {
+  if (events.length === 0) return;
+  await ensureSchema();
+  const sql = getSql();
+  for (const event of events) {
+    await sql`
+      INSERT INTO device_events (
+        id, device_uuid, alert_type, started_at, ended_at,
+        duration_seconds, outcome, ticket_id, note
+      ) VALUES (
+        ${event.id},
+        ${event.deviceUuid},
+        ${event.alertType},
+        ${event.startedAt}::timestamptz,
+        ${event.endedAt}::timestamptz,
+        ${event.durationSeconds},
+        ${event.outcome},
+        ${event.ticketId || ""},
+        ${event.note || ""}
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        ended_at = EXCLUDED.ended_at,
+        duration_seconds = EXCLUDED.duration_seconds,
+        outcome = EXCLUDED.outcome,
+        ticket_id = EXCLUDED.ticket_id,
+        note = EXCLUDED.note
+    `;
+  }
+}
+
+export async function dbReadAlertPending(): Promise<AlertPending[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM alert_pending`;
+  return rows.map((row) => {
+    const r = row as Record<string, unknown>;
+    return {
+      deviceUuid: String(r.device_uuid),
+      alertType: r.alert_type as AlertPending["alertType"],
+      firstSeenAt:
+        r.first_seen_at instanceof Date
+          ? r.first_seen_at.toISOString()
+          : String(r.first_seen_at),
+      lastSeenAt:
+        r.last_seen_at instanceof Date
+          ? r.last_seen_at.toISOString()
+          : String(r.last_seen_at),
+      inHoursSince: r.in_hours_since
+        ? r.in_hours_since instanceof Date
+          ? r.in_hours_since.toISOString()
+          : String(r.in_hours_since)
+        : null,
+      eventId: String(r.event_id ?? ""),
+    };
+  });
+}
+
+export async function dbReplaceAlertPending(pending: AlertPending[]) {
+  await ensureSchema();
+  const sql = getSql();
+  await sql`DELETE FROM alert_pending`;
+  for (const row of pending) {
+    await sql`
+      INSERT INTO alert_pending (
+        device_uuid, alert_type, first_seen_at, last_seen_at,
+        in_hours_since, event_id
+      ) VALUES (
+        ${row.deviceUuid},
+        ${row.alertType},
+        ${row.firstSeenAt}::timestamptz,
+        ${row.lastSeenAt}::timestamptz,
+        ${row.inHoursSince}::timestamptz,
+        ${row.eventId}
+      )
+    `;
+  }
+}
+
+export async function dbReadMassIncident(): Promise<MassIncidentState | null> {
+  await ensureSchema();
+  const raw = await getMeta("mass_incident", "");
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as MassIncidentState;
+    if (!parsed?.ticketId) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function dbWriteMassIncident(state: MassIncidentState | null) {
+  await ensureSchema();
+  await setMeta("mass_incident", state ? JSON.stringify(state) : "");
 }
 
 export type ApiTokenRow = {
