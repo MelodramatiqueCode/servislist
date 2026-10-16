@@ -6,7 +6,6 @@ import {
   memoryLabel,
   storageLabel,
 } from "@/lib/parse-device";
-import { SuggestionCard } from "@/components/suggestion-card";
 import { TICKET_ALERT_LABELS } from "@/lib/alerts";
 import { deviceEventCounts } from "@/lib/alert-state";
 import { formatDate, formatDuration, statusClass, ticketCode } from "@/lib/format";
@@ -16,7 +15,6 @@ import {
   listDeviceAlertEvents,
   listTickets,
 } from "@/lib/store";
-import { listVyjazdSuggestions } from "@/lib/suggestions";
 import { STATUS_LABELS, type DeviceEventOutcome } from "@/lib/types";
 
 const EVENT_OUTCOME_LABELS: Record<DeviceEventOutcome, string> = {
@@ -39,13 +37,11 @@ export default async function DeviceDetailPage({
   const device = await getDevice(uuid);
   if (!device) notFound();
 
-  const [tickets, suggestions, events] = await Promise.all([
+  const [tickets, events] = await Promise.all([
     listTickets({ deviceUuid: uuid }),
-    listVyjazdSuggestions({ deviceUuid: uuid, limit: 1 }),
     listDeviceAlertEvents(uuid, 7),
   ]);
   const counts = deviceEventCounts(events, 7);
-  const suggestion = suggestions[0] ?? null;
   const alert = hasHealthAlert(device);
 
   return (
@@ -192,17 +188,6 @@ export default async function DeviceDetailPage({
               + Naplánovať výjazd
             </Link>
           </div>
-
-          {suggestion ? (
-            <div className="panel space-y-3 p-5">
-              <h2 className="text-lg font-bold">Navrhovaný výjazd</h2>
-              <p className="text-sm text-[var(--ink-soft)]">
-                Automatický návrh z aktuálnych signálov — expres (táto
-                prevádzka) alebo trasa po okolí, ak dáva zmysel.
-              </p>
-              <SuggestionCard suggestion={suggestion} compact />
-            </div>
-          ) : null}
 
           <div className="panel space-y-3 p-5">
             <h2 className="text-lg font-bold">História alertov</h2>

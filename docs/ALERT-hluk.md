@@ -15,6 +15,18 @@ Predvolené hodnoty stačia na bežnú flotilu; všetko sa dá pretlačiť env p
 
 Zoskupenie ostáva: **jeden otvorený auto-ticket na zariadenie**, ďalšie alerty ako poznámky. Hromadný výpadok je samostatný fleet ticket.
 
+## Automatické návrhy (vypnuté)
+
+Auto-návrhy výjazdov (expres / trasa / okruh problematiky) sú **predvolene vypnuté** — zaberajú miesto a nepomáhajú.
+
+Odstránené z UI:
+
+- `/vyjazdy` — blok „Automatické návrhy výjazdov“
+- `/zariadenia/[uuid]` — panel „Navrhovaný výjazd“
+- `/ticket/[id]` — automatický návrh v paneli Výjazd (ostal ručný odkaz „+ Naplánovať výjazd“)
+
+`listVyjazdSuggestions` nič negeneruje, kým nie je `SUGGESTIONS_ENABLED=1`. Komponent `SuggestionCard` a logika v `src/lib/suggestions.ts` ostávajú v kóde. Existujúce tickety a výjazdy sa **nemažú**, žiadna tabuľka sa nedropuje.
+
 ## Env premenné
 
 | Premenná | Predvolené | Význam |

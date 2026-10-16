@@ -7,6 +7,7 @@ import {
   isAlertsEnabled,
   type AlertType,
 } from "./alerts";
+import { isSuggestionsEnabled } from "./features";
 import { hasHealthAlert } from "./parse-device";
 import { ticketCode } from "./format";
 import { listDevices, listTickets, listVyjazdy } from "./store";
@@ -681,6 +682,8 @@ export async function listVyjazdSuggestions(opts?: {
   ticketId?: string;
   limit?: number;
 }): Promise<VyjazdSuggestion[]> {
+  if (!isSuggestionsEnabled()) return [];
+
   const [devices, tickets, vyjazdy] = await Promise.all([
     listDevices(),
     listTickets(),

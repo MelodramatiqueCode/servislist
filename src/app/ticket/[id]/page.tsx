@@ -11,10 +11,8 @@ import {
   statusClass,
   ticketCode,
 } from "@/lib/format";
-import { SuggestionCard } from "@/components/suggestion-card";
 import { TICKET_ALERT_LABELS } from "@/lib/alerts";
 import { getDevice, getTicket } from "@/lib/store";
-import { listVyjazdSuggestions } from "@/lib/suggestions";
 import {
   PRIORITY_LABELS,
   STATUS_LABELS,
@@ -36,8 +34,6 @@ export default async function TicketDetailPage({
   const linkedDevice = ticket.deviceUuid
     ? await getDevice(ticket.deviceUuid)
     : null;
-  const suggestions = await listVyjazdSuggestions({ ticketId: id, limit: 1 });
-  const suggestion = suggestions[0] ?? null;
 
   return (
     <div className="shell max-w-4xl space-y-6">
@@ -200,33 +196,15 @@ export default async function TicketDetailPage({
 
           <div className="panel space-y-3 p-5">
             <h2 className="text-lg font-bold">Výjazd</h2>
-            {suggestion ? (
-              <>
-                <p className="text-sm text-[var(--ink-soft)]">
-                  Automatický návrh výjazdu — expres (táto prevádzka) alebo
-                  trasa, ak sú v okolí ďalšie signály.
-                </p>
-                <SuggestionCard suggestion={suggestion} compact />
-                <Link
-                  href={`/vyjazdy/novy?ticket=${ticket.id}`}
-                  className="btn btn-ghost w-full"
-                >
-                  Alebo naplánovať ručne
-                </Link>
-              </>
-            ) : (
-              <>
-                <p className="text-sm text-[var(--ink-soft)]">
-                  Naplánuj servisný výjazd k tomuto ticketu.
-                </p>
-                <Link
-                  href={`/vyjazdy/novy?ticket=${ticket.id}`}
-                  className="btn btn-primary w-full"
-                >
-                  + Naplánovať výjazd
-                </Link>
-              </>
-            )}
+            <p className="text-sm text-[var(--ink-soft)]">
+              Naplánuj servisný výjazd k tomuto ticketu.
+            </p>
+            <Link
+              href={`/vyjazdy/novy?ticket=${ticket.id}`}
+              className="btn btn-primary w-full"
+            >
+              + Naplánovať výjazd
+            </Link>
           </div>
 
           <div className="panel space-y-4 p-5">

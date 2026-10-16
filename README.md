@@ -44,6 +44,7 @@ npm run dev
 | `ALERT_MASS_MIN_DEVICES` | hromadný výpadok namiesto N ticketov |
 | `ALERT_HOT_OPEN_C` / `ALERT_HOT_CLOSE_C` | hysterézia Horúce CPU |
 | `ALERT_STORE_HOURS` | otváracie hodiny (predvolene `07:00-21:00`) |
+| `SUGGESTIONS_ENABLED` | auto-návrhy výjazdov (`0` predvolene) |
 | `CRON_SECRET` | náhodný secret pre Vercel Cron |
 | `OSRM_URL` | voliteľné; predvolene `https://router.project-osrm.org` |
 | `NOMINATIM_URL` | voliteľné; predvolene `https://nominatim.openstreetmap.org` |
@@ -78,5 +79,5 @@ curl -X POST "https://YOUR_APP.vercel.app/api/sync-balena?force=1" \
 - Katalóg Balena zariadení (online/offline, undervolt, teplota, disk, VPN)
 - Live sync + auto-tickety pri health alertoch (grace, hromadný výpadok, hysterézia CPU, otváracie hodiny — [docs/ALERT-hluk.md](docs/ALERT-hluk.md))
 - Tickety naviazané na UUID zariadenia, poznámky, priority
-- Servisné výjazdy ako trasa po prevádzkach (zastávky, ticknutie, návrh trasy)
+- Servisné výjazdy ako trasa po prevádzkach (zastávky, ticknutie, ručné plánovanie)
 - Odhad jazdy po trase (~km a ~čas) z OSM/OSRM, bez Google Maps účtu
