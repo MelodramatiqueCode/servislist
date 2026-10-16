@@ -240,6 +240,8 @@ async function archiveLegacyAutoTicketsOnce(sql: Sql) {
   if (existing !== "") return;
 
   const noteIdSuffix = ARCHIVE_NOTE_ID_SUFFIX;
+  const noteText: string = ARCHIVE_NOTE_TEXT;
+  const cutoff: string = LEGACY_AUTO_ARCHIVE_CUTOFF;
   const rows = await sql`
     UPDATE tickets
     SET
@@ -247,14 +249,14 @@ async function archiveLegacyAutoTicketsOnce(sql: Sql) {
       updated_at = NOW(),
       notes = COALESCE(notes, '[]'::jsonb) || jsonb_build_array(
         jsonb_build_object(
-          'id', id || ${noteIdSuffix},
-          'text', ${ARCHIVE_NOTE_TEXT},
+          'id', id || (${noteIdSuffix}::text),
+          'text', ${noteText}::text,
           'author', 'Automat',
           'createdAt', to_char(timezone('utc', NOW()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
         )
       )
     WHERE source = 'auto'
-      AND created_at < ${LEGACY_AUTO_ARCHIVE_CUTOFF}::timestamptz
+      AND created_at < ${cutoff}::timestamptz
       AND archived_at IS NULL
     RETURNING id
   `;
