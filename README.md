@@ -41,6 +41,8 @@ npm run dev
 | `ALERT_AUTO_TICKETS` | `1` / `0` |
 | `ALERT_AUTO_CLOSE` | `1` / `0` |
 | `CRON_SECRET` | náhodný secret pre Vercel Cron |
+| `SERVIS_BOT_API_TOKEN` | Bearer token pre Servis bot (API) |
+| `HOTLINE_BOT_API_TOKEN` | Bearer token pre Hotline bot (API) |
 | `OSRM_URL` | voliteľné; predvolene `https://router.project-osrm.org` |
 | `NOMINATIM_URL` | voliteľné; predvolene `https://nominatim.openstreetmap.org` |
 | `OSM_USER_AGENT` | voliteľné; identifikácia voči Nominatim |
@@ -59,6 +61,8 @@ Alebo otvor appku / spusti sync — schema sa vytvorí aj lazy pri prvom DB prí
 5. Cron: `vercel.json` syncuje flotilu každých 5 minút cez `/api/sync-balena?force=1`.
    - Na **Hobby** pláne môže byť cron obmedzený (max 1× denne) — uprav `schedule` alebo upgradni Pro.
 6. Odporúčané: zapni **Deployment Protection** / heslo, kým nemáte auth.
+
+HTTP API pre AI botov (tickety, poznámky, výjazdy) je popísané v [docs/API-boti.md](docs/API-boti.md). Tokeny nastav v Vercel env; do gitu ich nedávaj. Ak je zapnutá Vercel Authentication / heslo, boti potrebujú aj Protection Bypass for Automation.
 
 ### Manuálny sync
 

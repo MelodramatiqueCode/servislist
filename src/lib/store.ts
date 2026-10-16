@@ -44,23 +44,48 @@ import type {
   VyjazdStatus,
   VyjazdStore,
 } from "./types";
+import { STATUS_LABELS } from "./types";
 import type { DeviceHealthFilter } from "./parse-device";
 import {
   buildMergedVyjazdPair,
   canMergeVyjazdStatus,
+  deviceStoreLabel,
   hydrateVyjazd,
   markStopsDone,
   statusAfterStopProgress,
   stopsFromInput,
   syncLegacyVyjazdFields,
   vyjazdCoversDevice,
+  vyjazdTicketIds,
 } from "./vyjazd-stops";
 import { estimateDrivingRoute, routeFingerprint } from "./route-estimate";
+import { inDateRange, parseTicketRef, parseVyjazdRef } from "./refs";
+import {
+  buildPrevadzky,
+  ticketMatchesPrevadzka,
+  vyjazdMatchesPrevadzka,
+} from "./prevadzky";
+import { vyjazdCode } from "./format";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const TICKETS_FILE = path.join(DATA_DIR, "tickets.json");
-const DEVICES_FILE = path.join(DATA_DIR, "devices.json");
-const VYJAZDY_FILE = path.join(DATA_DIR, "vyjazdy.json");
+function dataDir() {
+  return (
+    process.env.SERVISLIST_DATA_DIR?.trim() ||
+    path.join(process.cwd(), "data")
+  );
+}
+
+function ticketsFile() {
+  return path.join(dataDir(), "tickets.json");
+}
+
+function devicesFile() {
+  return path.join(dataDir(), "devices.json");
+}
+
+function vyjazdyFile() {
+  return path.join(dataDir(), "vyjazdy.json");
+}
+
 const STALE_MS = 2 * 60 * 1000;
 
 function nowIso() {
@@ -84,15 +109,19 @@ function sortDevices(devices: ServiceDevice[]) {
 }
 
 async function ensureDir() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.mkdir(dataDir(), { recursive: true });
 }
 
 async function ensureTicketsFile() {
   await ensureDir();
   try {
-    await fs.access(TICKETS_FILE);
+    await fs.access(ticketsFile());
   } catch {
-    await fs.writeFile(TICKETS_FILE, JSON.stringify(seedTickets(), null, 2), "utf8");
+    await fs.writeFile(
+      ticketsFile(),
+      JSON.stringify(seedTickets(), null, 2),
+      "utf8",
+    );
   }
 }
 
@@ -101,12 +130,13 @@ async function readTicketStore(): Promise<TicketStore> {
     return dbReadTicketStore();
   }
   await ensureTicketsFile();
-  const raw = await fs.readFile(TICKETS_FILE, "utf8");
+  const raw = await fs.readFile(ticketsFile(), "utf8");
   const store = JSON.parse(raw) as TicketStore;
   store.tickets = store.tickets.map((t) => ({
     ...t,
     deviceUuid: t.deviceUuid ?? "",
     source: t.source ?? "manual",
+    clientRef: t.clientRef || undefined,
   }));
   return store;
 }
@@ -117,7 +147,7 @@ async function writeTicketStore(store: TicketStore) {
     return;
   }
   await ensureDir();
-  await fs.writeFile(TICKETS_FILE, JSON.stringify(store, null, 2), "utf8");
+  await fs.writeFile(ticketsFile(), JSON.stringify(store, null, 2), "utf8");
 }
 
 async function readDeviceStore(): Promise<DeviceStore> {
@@ -126,20 +156,20 @@ async function readDeviceStore(): Promise<DeviceStore> {
   }
   await ensureDir();
   try {
-    const raw = await fs.readFile(DEVICES_FILE, "utf8");
+    const raw = await fs.readFile(devicesFile(), "utf8");
     const store = JSON.parse(raw) as DeviceStore;
     store.devices = store.devices.map(hydrateDevice);
     return store;
   } catch {
     try {
       const exportRaw = await fs.readFile(
-        path.join(DATA_DIR, "balena-export.json"),
+        path.join(dataDir(), "balena-export.json"),
         "utf8",
       );
       const list = JSON.parse(exportRaw) as BalenaDeviceRaw[];
       if (Array.isArray(list) && list.length > 0) {
         await importBalenaDevices(list);
-        const raw = await fs.readFile(DEVICES_FILE, "utf8");
+        const raw = await fs.readFile(devicesFile(), "utf8");
         const store = JSON.parse(raw) as DeviceStore;
         store.devices = store.devices.map(hydrateDevice);
         return store;
@@ -195,7 +225,7 @@ async function writeDeviceStore(store: DeviceStore) {
     return;
   }
   await ensureDir();
-  await fs.writeFile(DEVICES_FILE, JSON.stringify(store, null, 2), "utf8");
+  await fs.writeFile(devicesFile(), JSON.stringify(store, null, 2), "utf8");
 }
 
 export async function importBalenaDevices(
@@ -598,16 +628,24 @@ export async function getDeviceStats() {
 }
 
 export async function listTickets(filters?: {
-  status?: TicketStatus | "vsetky";
+  status?: TicketStatus | "vsetky" | "aktivne";
   source?: TicketSource | "vsetky";
   q?: string;
   deviceUuid?: string;
+  prevadzka?: string;
+  from?: string;
+  to?: string;
+  dateField?: "createdAt" | "updatedAt";
 }): Promise<Ticket[]> {
   const store = await readTicketStore();
   let tickets = [...store.tickets];
 
   if (filters?.status && filters.status !== "vsetky") {
-    tickets = tickets.filter((t) => t.status === filters.status);
+    if (filters.status === "aktivne") {
+      tickets = tickets.filter((t) => OPEN_STATUSES.includes(t.status));
+    } else {
+      tickets = tickets.filter((t) => t.status === filters.status);
+    }
   }
 
   if (filters?.source && filters.source !== "vsetky") {
@@ -616,6 +654,18 @@ export async function listTickets(filters?: {
 
   if (filters?.deviceUuid) {
     tickets = tickets.filter((t) => t.deviceUuid === filters.deviceUuid);
+  }
+
+  if (filters?.prevadzka?.trim()) {
+    const devices = (await readDeviceStore()).devices;
+    tickets = tickets.filter((t) =>
+      ticketMatchesPrevadzka(t, filters.prevadzka!, devices),
+    );
+  }
+
+  if (filters?.from || filters?.to) {
+    const field = filters.dateField === "createdAt" ? "createdAt" : "updatedAt";
+    tickets = tickets.filter((t) => inDateRange(t[field], filters.from, filters.to));
   }
 
   if (filters?.q?.trim()) {
@@ -648,9 +698,50 @@ export async function getTicket(id: string): Promise<Ticket | null> {
   return store.tickets.find((t) => t.id === id) ?? null;
 }
 
-export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
+export async function getTicketByRef(ref: string): Promise<Ticket | null> {
+  const store = await readTicketStore();
+  const parsed = parseTicketRef(ref);
+  if (parsed.number != null) {
+    return store.tickets.find((t) => t.number === parsed.number) ?? null;
+  }
+  if (parsed.id) {
+    return store.tickets.find((t) => t.id === parsed.id) ?? null;
+  }
+  return null;
+}
+
+export async function getTicketByClientRef(
+  clientRef: string,
+): Promise<Ticket | null> {
+  const ref = clientRef.trim();
+  if (!ref) return null;
+  const store = await readTicketStore();
+  return store.tickets.find((t) => t.clientRef === ref) ?? null;
+}
+
+export async function createTicket(
+  input: CreateTicketInput,
+  opts?: { author?: string; note?: string },
+): Promise<Ticket> {
+  const clientRef = input.clientRef?.trim() || "";
+  if (clientRef) {
+    const existing = await getTicketByClientRef(clientRef);
+    if (existing) return existing;
+  }
+
   const store = await readTicketStore();
   const timestamp = nowIso();
+  const notes: TicketNote[] = [];
+  if (opts?.author) {
+    const text = opts.note?.trim() || "Ticket vytvorený cez API.";
+    notes.push({
+      id: randomUUID(),
+      text,
+      author: opts.author.trim(),
+      createdAt: timestamp,
+    });
+  }
+
   const ticket: Ticket = {
     id: randomUUID(),
     number: store.nextNumber,
@@ -664,11 +755,12 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
     assignedTo: input.assignedTo.trim() || "Nepriradené",
     status: "otvorene",
     priority: input.priority,
-    notes: [],
+    notes,
     createdAt: timestamp,
     updatedAt: timestamp,
     source: input.source ?? "manual",
     alertType: input.alertType,
+    clientRef: clientRef || undefined,
   };
 
   store.nextNumber += 1;
@@ -680,12 +772,25 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
 export async function updateTicketStatus(
   id: string,
   status: TicketStatus,
+  opts?: { author?: string; note?: string },
 ): Promise<Ticket | null> {
   const store = await readTicketStore();
   const ticket = store.tickets.find((t) => t.id === id);
   if (!ticket) return null;
+  const previous = ticket.status;
   ticket.status = status;
-  ticket.updatedAt = nowIso();
+  const timestamp = nowIso();
+  ticket.updatedAt = timestamp;
+  if (opts?.author && previous !== status) {
+    ticket.notes.push({
+      id: randomUUID(),
+      text:
+        opts.note?.trim() ||
+        `Stav zmenený: ${STATUS_LABELS[previous]} → ${STATUS_LABELS[status]}.`,
+      author: opts.author.trim(),
+      createdAt: timestamp,
+    });
+  }
   await writeTicketStore(store);
   return ticket;
 }
@@ -707,16 +812,24 @@ export async function addTicketNote(
   id: string,
   text: string,
   author: string,
+  opts?: { clientRef?: string },
 ): Promise<Ticket | null> {
   const store = await readTicketStore();
   const ticket = store.tickets.find((t) => t.id === id);
   if (!ticket) return null;
+
+  const clientRef = opts?.clientRef?.trim() || "";
+  if (clientRef) {
+    const existing = ticket.notes.find((n) => n.clientRef === clientRef);
+    if (existing) return ticket;
+  }
 
   const note: TicketNote = {
     id: randomUUID(),
     text: text.trim(),
     author: author.trim() || "Servisák",
     createdAt: nowIso(),
+    clientRef: clientRef || undefined,
   };
 
   ticket.notes.push(note);
@@ -747,10 +860,10 @@ function seedVyjazdy(): VyjazdStore {
 async function ensureVyjazdyFile() {
   await ensureDir();
   try {
-    await fs.access(VYJAZDY_FILE);
+    await fs.access(vyjazdyFile());
   } catch {
     await fs.writeFile(
-      VYJAZDY_FILE,
+      vyjazdyFile(),
       JSON.stringify(seedVyjazdy(), null, 2),
       "utf8",
     );
@@ -764,7 +877,7 @@ async function readVyjazdStore(): Promise<VyjazdStore> {
     return store;
   }
   await ensureVyjazdyFile();
-  const raw = await fs.readFile(VYJAZDY_FILE, "utf8");
+  const raw = await fs.readFile(vyjazdyFile(), "utf8");
   const store = JSON.parse(raw) as VyjazdStore;
   store.vyjazdy = (store.vyjazdy ?? []).map((v) => hydrateVyjazd(v));
   return store;
@@ -776,7 +889,7 @@ async function writeVyjazdStore(store: VyjazdStore) {
     return;
   }
   await ensureDir();
-  await fs.writeFile(VYJAZDY_FILE, JSON.stringify(store, null, 2), "utf8");
+  await fs.writeFile(vyjazdyFile(), JSON.stringify(store, null, 2), "utf8");
 }
 
 const VYJAZD_ACTIVE: VyjazdStatus[] = ["naplanovany", "prebieha"];
@@ -801,6 +914,10 @@ export async function listVyjazdy(filters?: {
   status?: VyjazdStatus | "vsetky";
   q?: string;
   deviceUuid?: string;
+  ticketId?: string;
+  prevadzka?: string;
+  from?: string;
+  to?: string;
 }): Promise<Vyjazd[]> {
   const store = await readVyjazdStore();
   let vyjazdy = [...store.vyjazdy];
@@ -811,6 +928,23 @@ export async function listVyjazdy(filters?: {
 
   if (filters?.deviceUuid) {
     vyjazdy = vyjazdy.filter((v) => vyjazdCoversDevice(v, filters.deviceUuid!));
+  }
+
+  if (filters?.ticketId) {
+    vyjazdy = vyjazdy.filter((v) => vyjazdTicketIds(v).has(filters.ticketId!));
+  }
+
+  if (filters?.prevadzka?.trim()) {
+    vyjazdy = vyjazdy.filter((v) =>
+      vyjazdMatchesPrevadzka(v, filters.prevadzka!),
+    );
+  }
+
+  if (filters?.from || filters?.to) {
+    vyjazdy = vyjazdy.filter((v) => {
+      const when = v.scheduledAt || v.updatedAt;
+      return inDateRange(when, filters.from, filters.to);
+    });
   }
 
   if (filters?.q?.trim()) {
@@ -846,6 +980,101 @@ export async function listVyjazdy(filters?: {
 export async function getVyjazd(id: string): Promise<Vyjazd | null> {
   const store = await readVyjazdStore();
   return store.vyjazdy.find((v) => v.id === id) ?? null;
+}
+
+export async function getVyjazdByRef(ref: string): Promise<Vyjazd | null> {
+  const store = await readVyjazdStore();
+  const parsed = parseVyjazdRef(ref);
+  if (parsed.number != null) {
+    return store.vyjazdy.find((v) => v.number === parsed.number) ?? null;
+  }
+  if (parsed.id) {
+    return store.vyjazdy.find((v) => v.id === parsed.id) ?? null;
+  }
+  return null;
+}
+
+export async function listPrevadzky(query?: string) {
+  const devices = (await readDeviceStore()).devices;
+  const all = buildPrevadzky(devices);
+  const q = query?.trim().toLowerCase() ?? "";
+  if (!q) return all;
+  return all.filter((p) => {
+    const hay = [p.label, p.partner, p.city, p.address, p.phone, p.key]
+      .join(" ")
+      .toLowerCase();
+    return hay.includes(q);
+  });
+}
+
+export async function linkTicketToVyjazd(
+  ticketId: string,
+  vyjazdId: string,
+  opts?: { author?: string },
+): Promise<{ ticket: Ticket; vyjazd: Vyjazd; linked: boolean } | null> {
+  const ticketStore = await readTicketStore();
+  const ticket = ticketStore.tickets.find((t) => t.id === ticketId);
+  if (!ticket) return null;
+
+  const vyjazdStore = await readVyjazdStore();
+  const vyjazd = vyjazdStore.vyjazdy.find((v) => v.id === vyjazdId);
+  if (!vyjazd) return null;
+
+  if (vyjazdTicketIds(vyjazd).has(ticket.id)) {
+    return { ticket, vyjazd, linked: false };
+  }
+
+  if (!vyjazd.ticketId) {
+    vyjazd.ticketId = ticket.id;
+  }
+
+  const matchingStop = ticket.deviceUuid
+    ? vyjazd.stops.find((s) => s.deviceUuid === ticket.deviceUuid)
+    : undefined;
+  if (matchingStop && !matchingStop.ticketId) {
+    matchingStop.ticketId = ticket.id;
+  } else if (
+    !vyjazd.stops.some((s) => s.ticketId === ticket.id) &&
+    (ticket.customerName || ticket.deviceUuid)
+  ) {
+    const device = ticket.deviceUuid
+      ? (await readDeviceStore()).devices.find((d) => d.uuid === ticket.deviceUuid)
+      : null;
+    vyjazd.stops.push({
+      id: randomUUID(),
+      store: ticket.customerName || (device ? deviceStoreLabel(device) : ""),
+      address: device?.address ?? "",
+      contactPhone: ticket.customerPhone || device?.phone || "",
+      deviceUuid: ticket.deviceUuid || "",
+      ticketId: ticket.id,
+      done: false,
+      note: "",
+    });
+    if (!vyjazd.store) {
+      vyjazd.store = ticket.customerName;
+    }
+    if (!vyjazd.deviceUuid && ticket.deviceUuid) {
+      vyjazd.deviceUuid = ticket.deviceUuid;
+    }
+  }
+
+  syncLegacyVyjazdFields(vyjazd);
+  vyjazd.updatedAt = nowIso();
+
+  if (opts?.author) {
+    const timestamp = vyjazd.updatedAt;
+    ticket.notes.push({
+      id: randomUUID(),
+      text: `Naviazané na výjazd ${vyjazdCode(vyjazd.number)}.`,
+      author: opts.author.trim(),
+      createdAt: timestamp,
+    });
+    ticket.updatedAt = timestamp;
+    await writeTicketStore(ticketStore);
+  }
+
+  await writeVyjazdStore(vyjazdStore);
+  return { ticket, vyjazd, linked: true };
 }
 
 export async function createVyjazd(input: CreateVyjazdInput): Promise<Vyjazd> {

@@ -11,6 +11,7 @@ export type TicketNote = {
   text: string;
   author: string;
   createdAt: string;
+  clientRef?: string;
 };
 
 export type BalenaDeviceRaw = {
@@ -105,6 +106,7 @@ export type Ticket = {
   updatedAt: string;
   source?: TicketSource;
   alertType?: TicketAlertType;
+  clientRef?: string;
 };
 
 export type CreateTicketInput = {
@@ -119,6 +121,7 @@ export type CreateTicketInput = {
   priority: TicketPriority;
   source?: TicketSource;
   alertType?: TicketAlertType;
+  clientRef?: string;
 };
 
 export type TicketStore = {
