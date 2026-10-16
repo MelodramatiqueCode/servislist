@@ -69,7 +69,12 @@ function findOpenMassTicket(store: TicketStore, ticketId?: string) {
   );
 }
 
-function pushTicket(store: TicketStore, input: ReturnType<typeof buildAlertTicket>, timestamp: string, extras?: Partial<Ticket>) {
+type AlertTicketInput =
+  | ReturnType<typeof buildAlertTicket>
+  | ReturnType<typeof buildMassOfflineTicket>
+  | ReturnType<typeof buildFlapTicket>;
+
+function pushTicket(store: TicketStore, input: AlertTicketInput, timestamp: string, extras?: Partial<Ticket>) {
   const ticket: Ticket = {
     id: randomUUID(),
     number: store.nextNumber,

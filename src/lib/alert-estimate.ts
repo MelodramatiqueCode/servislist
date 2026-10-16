@@ -200,11 +200,10 @@ export function estimateFromSeptemberSummary() {
   const massWaveTickets = 641;
   const massWaves = 5;
   const hotFilakovo = 262;
-  const undervoltKeep = auto - massWaveTickets - hotFilakovo;
-  // zvyšok 574 zahŕňa undervolt (ostáva), disk/vpn, nočné offline a iné short
-  // konzervatívne: 40 % zvyšku ostane (undervolt + dlhé offline + disk),
+  // zvyšok 574 = auto − mass vlny − hot #200 (zahŕňa undervolt, disk/vpn, nočné a iné short)
+  // konzervatívne: 35 % zvyšku ostane (undervolt + dlhé offline + disk),
   // zvyšok padne do histórie / hodín.
-  const remainingKeep = Math.round(574 * 0.35);
+  const remainingKeep = Math.round((auto - massWaveTickets - hotFilakovo) * 0.35);
   const hotKeep = 2; // hysterézia zloží flap #200 na 1–2 tickety
   const flapKeep = 3; // zopár zariadení s opakovaným dennným flapom
   const estimated = massWaves + remainingKeep + hotKeep + flapKeep;
