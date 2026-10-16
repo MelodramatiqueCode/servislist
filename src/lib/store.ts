@@ -93,6 +93,8 @@ function vyjazdyFile() {
 
 const STALE_MS = 2 * 60 * 1000;
 
+const OPEN_STATUSES: TicketStatus[] = ["otvorene", "v_rieseni", "caka_diely"];
+
 function nowIso() {
   return new Date().toISOString();
 }
