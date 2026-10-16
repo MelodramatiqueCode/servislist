@@ -1,5 +1,8 @@
-import { isDiskFull, isHot, hardwareLabel } from "./parse-device";
-import type { ServiceDevice, TicketPriority } from "./types";
+import { isDiskFull, hardwareLabel } from "./parse-device";
+import { getAlertConfig } from "./alert-config";
+import type { ServiceDevice, TicketAlertType, TicketPriority } from "./types";
+
+export { isAlertAutoCloseEnabled, isAlertsEnabled } from "./alert-config";
 
 export const ALERT_TYPES = [
   "offline",
@@ -19,26 +22,15 @@ export const ALERT_LABELS: Record<AlertType, string> = {
   vpn_down: "Bez VPN",
 };
 
-export function isAlertsEnabled() {
-  const v = process.env.ALERT_AUTO_TICKETS;
-  if (v === undefined || v === "") return true;
-  return v !== "0" && v.toLowerCase() !== "false";
-}
-
-export function isAlertAutoCloseEnabled() {
-  const v = process.env.ALERT_AUTO_CLOSE;
-  if (v === undefined || v === "") return true;
-  return v !== "0" && v.toLowerCase() !== "false";
-}
-
 export function isAlertActive(device: ServiceDevice, type: AlertType): boolean {
+  const config = getAlertConfig();
   switch (type) {
     case "offline":
       return !device.isOnline;
     case "undervolt":
       return device.isUndervolted;
     case "hot":
-      return isHot(device);
+      return device.cpuTemp != null && device.cpuTemp >= config.hotOpenC;
     case "disk":
       return isDiskFull(device);
     case "vpn_down":
@@ -67,7 +59,7 @@ export function alertPriority(type: AlertType): TicketPriority {
   }
 }
 
-function deviceCustomerLabel(device: ServiceDevice) {
+export function deviceCustomerLabel(device: ServiceDevice) {
   return (
     [device.code && `#${device.code}`, device.partner, device.city]
       .filter(Boolean)
@@ -148,4 +140,72 @@ export function recoveryNote(type: AlertType, device: ServiceDevice) {
   ];
   if (device.cpuTemp != null) bits.push(`CPU: ${Math.round(device.cpuTemp)} °C`);
   return bits.join(" · ");
+}
+
+export const TICKET_ALERT_LABELS: Record<TicketAlertType, string> = {
+  ...ALERT_LABELS,
+  mass_offline: "Hromadný výpadok",
+  flap: "Opakovaný výpadok",
+};
+
+function shortDevice(device: ServiceDevice) {
+  return (
+    [device.code && `#${device.code}`, device.city || device.partner]
+      .filter(Boolean)
+      .join(" ") || device.name
+  );
+}
+
+export function buildMassOfflineTicket(devices: ServiceDevice[], startedAt: string) {
+  const lines = devices.slice(0, 40).map((d) => `- ${shortDevice(d)} · ${d.uuid}`);
+  const extra =
+    devices.length > 40 ? `\n- … a ďalších ${devices.length - 40}` : "";
+  return {
+    title: `Hromadný výpadok: ${devices.length} zariadení offline`,
+    description: [
+      `Hromadný offline v krátkom okne (od ${startedAt}).`,
+      "Namiesto ticketu na každé zariadenie je jeden incident.",
+      "",
+      "Zasiahnuté zariadenia:",
+      ...lines,
+      extra,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    deviceType: "Raspberry Pi (Balena)",
+    deviceSerial: "",
+    deviceUuid: "",
+    customerName: "Hromadný výpadok",
+    customerPhone: "",
+    assignedTo: "Automat",
+    priority: "urgentna" as TicketPriority,
+    source: "auto" as const,
+    alertType: "mass_offline" as const,
+  };
+}
+
+export function buildFlapTicket(
+  device: ServiceDevice,
+  count: number,
+  windowDays: number,
+) {
+  return {
+    title: `Opakovaný výpadok: ${shortDevice(device)}`,
+    description: [
+      `Zariadenie malo ${count} krátkych offline epizód za ${windowDays} dní.`,
+      "Jednotlivé výpadky ostali v histórii zariadenia; tento ticket je súhrn opakovaného flapu.",
+      "",
+      `Zariadenie: ${device.name}`,
+      `UUID: ${device.uuid}`,
+    ].join("\n"),
+    deviceType: hardwareLabel(device.deviceType) || "Raspberry Pi (Balena)",
+    deviceSerial: device.uuid,
+    deviceUuid: device.uuid,
+    customerName: deviceCustomerLabel(device),
+    customerPhone: device.phone || "",
+    assignedTo: "Automat",
+    priority: "vysoka" as TicketPriority,
+    source: "auto" as const,
+    alertType: "flap" as const,
+  };
 }

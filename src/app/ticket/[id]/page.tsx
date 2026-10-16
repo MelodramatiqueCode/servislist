@@ -12,6 +12,7 @@ import {
   ticketCode,
 } from "@/lib/format";
 import { SuggestionCard } from "@/components/suggestion-card";
+import { TICKET_ALERT_LABELS } from "@/lib/alerts";
 import { getDevice, getTicket } from "@/lib/store";
 import { listVyjazdSuggestions } from "@/lib/suggestions";
 import {
@@ -57,7 +58,9 @@ export default async function TicketDetailPage({
           {ticket.source === "auto" ? (
             <span className="chip chip-warn">
               Auto
-              {ticket.alertType ? ` · ${ticket.alertType}` : ""}
+              {ticket.alertType
+                ? ` · ${TICKET_ALERT_LABELS[ticket.alertType] ?? ticket.alertType}`
+                : ""}
             </span>
           ) : null}
         </div>

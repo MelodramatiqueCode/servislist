@@ -7,10 +7,27 @@ import {
   storageLabel,
 } from "@/lib/parse-device";
 import { SuggestionCard } from "@/components/suggestion-card";
-import { formatDate, statusClass, ticketCode } from "@/lib/format";
-import { ensureFreshBalenaSync, getDevice, listTickets } from "@/lib/store";
+import { TICKET_ALERT_LABELS } from "@/lib/alerts";
+import { deviceEventCounts } from "@/lib/alert-state";
+import { formatDate, formatDuration, statusClass, ticketCode } from "@/lib/format";
+import {
+  ensureFreshBalenaSync,
+  getDevice,
+  listDeviceAlertEvents,
+  listTickets,
+} from "@/lib/store";
 import { listVyjazdSuggestions } from "@/lib/suggestions";
-import { STATUS_LABELS } from "@/lib/types";
+import { STATUS_LABELS, type DeviceEventOutcome } from "@/lib/types";
+
+const EVENT_OUTCOME_LABELS: Record<DeviceEventOutcome, string> = {
+  open: "prebieha",
+  short: "krátky",
+  ticketed: "ticket",
+  outside_hours: "mimo hodín",
+  mass: "hromadný",
+  recovered: "odznel",
+  flap: "flap",
+};
 
 export default async function DeviceDetailPage({
   params,
@@ -22,10 +39,12 @@ export default async function DeviceDetailPage({
   const device = await getDevice(uuid);
   if (!device) notFound();
 
-  const [tickets, suggestions] = await Promise.all([
+  const [tickets, suggestions, events] = await Promise.all([
     listTickets({ deviceUuid: uuid }),
     listVyjazdSuggestions({ deviceUuid: uuid, limit: 1 }),
+    listDeviceAlertEvents(uuid, 7),
   ]);
+  const counts = deviceEventCounts(events, 7);
   const suggestion = suggestions[0] ?? null;
   const alert = hasHealthAlert(device);
 
@@ -184,6 +203,50 @@ export default async function DeviceDetailPage({
               <SuggestionCard suggestion={suggestion} compact />
             </div>
           ) : null}
+
+          <div className="panel space-y-3 p-5">
+            <h2 className="text-lg font-bold">História alertov</h2>
+            <p className="text-sm text-[var(--ink-soft)]">
+              Krátke výpadky ostávajú tu, nie v zozname ticketov.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <span className="chip chip-compact">
+                offline {counts.offline ?? 0}× za 7 dní
+              </span>
+              <span className="chip chip-compact">
+                Horúce CPU {counts.hot ?? 0}×
+              </span>
+              <span className="chip chip-compact">
+                Undervolt {counts.undervolt ?? 0}×
+              </span>
+            </div>
+            {events.length === 0 ? (
+              <p className="text-sm text-[var(--ink-soft)]">
+                Za 7 dní žiadna epizóda.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {events.slice(0, 20).map((event) => (
+                  <li
+                    key={event.id}
+                    className="rounded-xl border border-[var(--line)] px-3 py-2.5 text-sm"
+                  >
+                    <div className="font-semibold">
+                      {TICKET_ALERT_LABELS[event.alertType] ?? event.alertType}
+                      <span className="ml-2 font-normal text-[var(--ink-soft)]">
+                        {EVENT_OUTCOME_LABELS[event.outcome]}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-[var(--ink-soft)]">
+                      {formatDate(event.startedAt)}
+                      {event.endedAt ? ` → ${formatDate(event.endedAt)}` : " · prebieha"}
+                      {` · ${formatDuration(event.durationSeconds)}`}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           <div className="panel space-y-3 p-5">
             <h2 className="text-lg font-bold">Tickety ({tickets.length})</h2>

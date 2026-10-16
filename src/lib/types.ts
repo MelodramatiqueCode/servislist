@@ -85,7 +85,45 @@ export type TicketAlertType =
   | "undervolt"
   | "hot"
   | "disk"
-  | "vpn_down";
+  | "vpn_down"
+  | "mass_offline"
+  | "flap";
+
+export type DeviceEventOutcome =
+  | "open"
+  | "short"
+  | "ticketed"
+  | "outside_hours"
+  | "mass"
+  | "recovered"
+  | "flap";
+
+export type DeviceEvent = {
+  id: string;
+  deviceUuid: string;
+  alertType: TicketAlertType;
+  startedAt: string;
+  endedAt: string | null;
+  durationSeconds: number | null;
+  outcome: DeviceEventOutcome;
+  ticketId: string;
+  note: string;
+};
+
+export type AlertPending = {
+  deviceUuid: string;
+  alertType: TicketAlertType;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  inHoursSince: string | null;
+  eventId: string;
+};
+
+export type MassIncidentState = {
+  ticketId: string;
+  startedAt: string;
+  deviceUuids: string[];
+};
 
 export type Ticket = {
   id: string;

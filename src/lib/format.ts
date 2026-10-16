@@ -9,6 +9,16 @@ import {
   VYJAZD_STATUS_LABELS,
 } from "@/lib/types";
 
+export function formatDuration(seconds: number | null | undefined) {
+  if (seconds == null || seconds < 0) return "—";
+  if (seconds < 60) return `${seconds} s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours} hod ${rest} min` : `${hours} hod`;
+}
+
 export function formatDate(iso: string) {
   return new Intl.DateTimeFormat("sk-SK", {
     day: "2-digit",
