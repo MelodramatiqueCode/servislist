@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import type { ServiceDevice } from "../src/lib/types";
+import type * as Store from "../src/lib/store";
+import type * as BotApi from "../src/lib/bot-api";
 
 const previous = {
   dataDir: process.env.SERVISLIST_DATA_DIR,
@@ -12,11 +14,13 @@ const previous = {
   prismaUrl: process.env.POSTGRES_PRISMA_URL,
 };
 
-const dataDir = await mkdtemp(path.join(tmpdir(), "servislist-api-"));
-process.env.SERVISLIST_DATA_DIR = dataDir;
-delete process.env.DATABASE_URL;
-delete process.env.POSTGRES_URL;
-delete process.env.POSTGRES_PRISMA_URL;
+let dataDir = "";
+let store: typeof Store;
+let botCreateTicket: typeof BotApi.botCreateTicket;
+let botAddNote: typeof BotApi.botAddNote;
+let botCloseTicket: typeof BotApi.botCloseTicket;
+let botListTickets: typeof BotApi.botListTickets;
+let botLinkTicket: typeof BotApi.botLinkTicket;
 
 const device: ServiceDevice = {
   uuid: "uuid-1",
@@ -53,7 +57,15 @@ const device: ServiceDevice = {
   note: "",
 };
 
+const actor = { id: "hotline", name: "Hotline bot" };
+
 before(async () => {
+  dataDir = await mkdtemp(path.join(tmpdir(), "servislist-api-"));
+  process.env.SERVISLIST_DATA_DIR = dataDir;
+  delete process.env.DATABASE_URL;
+  delete process.env.POSTGRES_URL;
+  delete process.env.POSTGRES_PRISMA_URL;
+
   await mkdir(dataDir, { recursive: true });
   await writeFile(
     path.join(dataDir, "devices.json"),
@@ -105,6 +117,14 @@ before(async () => {
     }),
     "utf8",
   );
+
+  store = await import("../src/lib/store");
+  const api = await import("../src/lib/bot-api");
+  botCreateTicket = api.botCreateTicket;
+  botAddNote = api.botAddNote;
+  botCloseTicket = api.botCloseTicket;
+  botListTickets = api.botListTickets;
+  botLinkTicket = api.botLinkTicket;
 });
 
 after(() => {
@@ -117,17 +137,6 @@ after(() => {
   if (previous.prismaUrl === undefined) delete process.env.POSTGRES_PRISMA_URL;
   else process.env.POSTGRES_PRISMA_URL = previous.prismaUrl;
 });
-
-const store = await import("../src/lib/store");
-const {
-  botCreateTicket,
-  botAddNote,
-  botCloseTicket,
-  botListTickets,
-  botLinkTicket,
-} = await import("../src/lib/bot-api");
-
-const actor = { id: "hotline", name: "Hotline bot" };
 
 describe("bot API store", () => {
   test("vytvorí ticket, pridá záznam, uzavrie a naviaže výjazd", async () => {
