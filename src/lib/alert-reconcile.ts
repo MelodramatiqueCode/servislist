@@ -53,6 +53,7 @@ function findOpenAutoTicket(store: TicketStore, deviceUuid: string) {
   return store.tickets.find(
     (t) =>
       t.source === "auto" &&
+      !t.archivedAt &&
       t.deviceUuid === deviceUuid &&
       OPEN_STATUSES.includes(t.status as (typeof OPEN_STATUSES)[number]) &&
       t.alertType !== "mass_offline",
@@ -63,6 +64,7 @@ function findOpenMassTicket(store: TicketStore, ticketId?: string) {
   return store.tickets.find(
     (t) =>
       t.source === "auto" &&
+      !t.archivedAt &&
       t.alertType === "mass_offline" &&
       OPEN_STATUSES.includes(t.status as (typeof OPEN_STATUSES)[number]) &&
       (!ticketId || t.id === ticketId),

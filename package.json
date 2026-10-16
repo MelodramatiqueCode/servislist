@@ -9,7 +9,9 @@
     "lint": "eslint",
     "test": "tsx --test --test-concurrency=1 test/*.test.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
-    "estimate:alerts": "tsx scripts/estimate-sept-alerts.ts"
+    "estimate:alerts": "tsx scripts/estimate-sept-alerts.ts",
+    "tickets:archive": "tsx scripts/archive-auto-tickets.ts",
+    "tickets:archive:dry": "tsx scripts/archive-auto-tickets.ts --dry-run"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

@@ -10,7 +10,7 @@ async function main() {
 
   await ensureSchema();
   console.log(
-    "Schema OK — tickets + vyjazdy + device_events + alert_pending + api_tokens + app_meta.",
+    "Schema OK — tickets (archived_at) + vyjazdy + device_events + alert_pending + api_tokens + app_meta.",
   );
 }
 

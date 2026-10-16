@@ -8,6 +8,7 @@ import {
   createVyjazd,
   deleteVyjazd,
   getDevice,
+  getTicket,
   mergeVyjazdy,
   refreshVyjazdRoute,
   setVyjazdStopDone,
@@ -16,6 +17,7 @@ import {
   updateVyjazd,
   updateVyjazdStatus,
 } from "./store";
+import { isTicketArchived } from "./ticket-archive";
 import { hardwareLabel } from "./parse-device";
 import type {
   TicketPriority,
@@ -79,10 +81,18 @@ export async function createTicketAction(formData: FormData) {
   redirect(`/ticket/${ticket.id}`);
 }
 
+async function rejectIfArchived(id: string) {
+  const ticket = await getTicket(id);
+  if (ticket && isTicketArchived(ticket)) {
+    throw new Error("Archivovaný ticket je len na čítanie.");
+  }
+}
+
 export async function updateStatusAction(formData: FormData) {
   const id = str(formData, "id");
   const status = str(formData, "status") as TicketStatus;
   if (!id || !status) return;
+  await rejectIfArchived(id);
 
   await updateTicketStatus(id, status);
   revalidatePath("/");
@@ -93,6 +103,7 @@ export async function updatePriorityAction(formData: FormData) {
   const id = str(formData, "id");
   const priority = str(formData, "priority") as TicketPriority;
   if (!id || !priority) return;
+  await rejectIfArchived(id);
 
   await updateTicketPriority(id, priority);
   revalidatePath("/");
@@ -104,6 +115,7 @@ export async function addNoteAction(formData: FormData) {
   const text = str(formData, "text");
   const author = str(formData, "author") || "Servisák";
   if (!id || !text) return;
+  await rejectIfArchived(id);
 
   await addTicketNote(id, text, author);
   revalidatePath("/");

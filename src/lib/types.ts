@@ -143,6 +143,8 @@ export type Ticket = {
   updatedAt: string;
   source?: TicketSource;
   alertType?: TicketAlertType;
+  /** ISO — prítomné = ticket je v archíve (stav ostáva, len sa schová zo zoznamu). */
+  archivedAt?: string;
 };
 
 export type CreateTicketInput = {

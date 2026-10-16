@@ -55,6 +55,12 @@ import {
   vyjazdCoversDevice,
 } from "./vyjazd-stops";
 import { estimateDrivingRoute, routeFingerprint } from "./route-estimate";
+import {
+  archiveLegacyAutoTickets as applyArchiveLegacyAutoTickets,
+  isTicketArchived,
+  matchesArchivedFilter,
+  type ArchivedFilter,
+} from "./ticket-archive";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const TICKETS_FILE = path.join(DATA_DIR, "tickets.json");
@@ -106,6 +112,7 @@ async function readTicketStore(): Promise<TicketStore> {
     ...t,
     deviceUuid: t.deviceUuid ?? "",
     source: t.source ?? "manual",
+    archivedAt: t.archivedAt || undefined,
   }));
   return store;
 }
@@ -504,9 +511,12 @@ export async function listTickets(filters?: {
   source?: TicketSource | "vsetky";
   q?: string;
   deviceUuid?: string;
+  archived?: ArchivedFilter;
 }): Promise<Ticket[]> {
   const store = await readTicketStore();
   let tickets = [...store.tickets];
+  const archived = filters?.archived ?? "hide";
+  tickets = tickets.filter((t) => matchesArchivedFilter(t, archived));
 
   if (filters?.status && filters.status !== "vsetky") {
     tickets = tickets.filter((t) => t.status === filters.status);
@@ -586,6 +596,7 @@ export async function updateTicketStatus(
   const store = await readTicketStore();
   const ticket = store.tickets.find((t) => t.id === id);
   if (!ticket) return null;
+  if (isTicketArchived(ticket)) return ticket;
   ticket.status = status;
   ticket.updatedAt = nowIso();
   await writeTicketStore(store);
@@ -599,6 +610,7 @@ export async function updateTicketPriority(
   const store = await readTicketStore();
   const ticket = store.tickets.find((t) => t.id === id);
   if (!ticket) return null;
+  if (isTicketArchived(ticket)) return ticket;
   ticket.priority = priority;
   ticket.updatedAt = nowIso();
   await writeTicketStore(store);
@@ -613,6 +625,7 @@ export async function addTicketNote(
   const store = await readTicketStore();
   const ticket = store.tickets.find((t) => t.id === id);
   if (!ticket) return null;
+  if (isTicketArchived(ticket)) return ticket;
 
   const note: TicketNote = {
     id: randomUUID(),
@@ -628,13 +641,37 @@ export async function addTicketNote(
 }
 
 export async function getStats() {
-  const tickets = await listTickets();
+  const tickets = await listTickets({ archived: "hide" });
+  const archived = await listTickets({ archived: "only" });
   return {
     total: tickets.length,
     otvorene: tickets.filter((t) => t.status === "otvorene").length,
     v_rieseni: tickets.filter((t) => t.status === "v_rieseni").length,
     caka_diely: tickets.filter((t) => t.status === "caka_diely").length,
     hotove: tickets.filter((t) => t.status === "hotove").length,
+    archived: archived.length,
+  };
+}
+
+export async function archiveLegacyAutoTickets(opts?: {
+  before?: Date;
+  dryRun?: boolean;
+}) {
+  const before = opts?.before ?? new Date();
+  const store = await readTicketStore();
+  const result = applyArchiveLegacyAutoTickets(store.tickets, before);
+  if (!opts?.dryRun && result.archived > 0) {
+    store.tickets = result.tickets;
+    await writeTicketStore(store);
+  }
+  return {
+    archived: result.archived,
+    before: before.toISOString(),
+    dryRun: Boolean(opts?.dryRun),
+    totalAutoBefore: store.tickets.filter((t) =>
+      (t.source ?? "manual") === "auto" &&
+      new Date(t.createdAt).getTime() < before.getTime(),
+    ).length,
   };
 }
 

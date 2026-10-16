@@ -12,6 +12,7 @@ import {
 import { getDevice, listDeviceAlertEvents, listDevices, listTickets } from "./store";
 import type { DeviceEvent, ServiceDevice, Ticket, TicketStatus } from "./types";
 import { STATUS_LABELS } from "./types";
+import { isTicketArchived, parseArchivedQuery } from "./ticket-archive";
 import { deviceStoreLabel, prevadzkaKey } from "./vyjazd-stops";
 
 const OPEN_STATUSES: TicketStatus[] = ["otvorene", "v_rieseni", "caka_diely"];
@@ -43,6 +44,7 @@ export function serializeOpenTicket(ticket: Ticket) {
     deviceUuid: ticket.deviceUuid || "",
     alertType: ticket.alertType,
     source: ticket.source ?? "manual",
+    archivedAt: ticket.archivedAt,
     createdAt: ticket.createdAt,
     updatedAt: ticket.updatedAt,
   };
@@ -92,8 +94,9 @@ export function groupOpenTicketsByLocation(
 ) {
   const prevadzka = filters?.prevadzka?.trim() ?? "";
   const region = filters?.region?.trim() ?? "";
-  const open = tickets.filter((t) =>
-    OPEN_STATUSES.includes(t.status as TicketStatus),
+  const open = tickets.filter(
+    (t) =>
+      OPEN_STATUSES.includes(t.status as TicketStatus) && !isTicketArchived(t),
   );
 
   const groups = new Map<
@@ -196,8 +199,61 @@ export async function botDeviceEventHistory(uuid: string, daysRaw?: string) {
   };
 }
 
+export async function botListTickets(url: URL) {
+  const archived = parseArchivedQuery(
+    queryString(url, "archiv", "archived", "archive"),
+  );
+  const statusRaw = queryString(url, "status") || "vsetky";
+  if (
+    statusRaw !== "vsetky" &&
+    statusRaw !== "aktivne" &&
+    statusRaw !== "otvorene" &&
+    statusRaw !== "v_rieseni" &&
+    statusRaw !== "caka_diely" &&
+    statusRaw !== "hotove"
+  ) {
+    throw new ApiError(
+      400,
+      "validation_error",
+      "Neplatný status. Použi otvorene, v_rieseni, caka_diely, hotove, aktivne alebo vsetky.",
+    );
+  }
+  const sourceRaw = queryString(url, "source") || "vsetky";
+  if (sourceRaw !== "vsetky" && sourceRaw !== "manual" && sourceRaw !== "auto") {
+    throw new ApiError(
+      400,
+      "validation_error",
+      "Neplatný source. Použi manual, auto alebo vsetky.",
+    );
+  }
+
+  let tickets = await listTickets({
+    status: statusRaw === "aktivne" ? "vsetky" : statusRaw,
+    source: sourceRaw,
+    q: queryString(url, "q", "hladaj"),
+    deviceUuid: queryString(url, "device", "deviceUuid", "zariadenie"),
+    archived,
+  });
+  if (statusRaw === "aktivne") {
+    tickets = tickets.filter((t) =>
+      OPEN_STATUSES.includes(t.status as TicketStatus),
+    );
+  }
+  return {
+    count: tickets.length,
+    archived: archived,
+    tickets: tickets.map(serializeOpenTicket),
+  };
+}
+
 export async function botOpenTicketsByLocation(url: URL) {
-  const [tickets, devices] = await Promise.all([listTickets(), listDevices()]);
+  const archived = parseArchivedQuery(
+    queryString(url, "archiv", "archived", "archive"),
+  );
+  const [tickets, devices] = await Promise.all([
+    listTickets({ archived }),
+    listDevices(),
+  ]);
   const groups = groupOpenTicketsByLocation(tickets, devices, {
     prevadzka: queryString(url, "prevadzka", "store"),
     region: queryString(url, "region", "kraj", "mesto", "city"),

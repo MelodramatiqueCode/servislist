@@ -50,7 +50,14 @@ npm run dev
 | `NOMINATIM_URL` | voliteľné; predvolene `https://nominatim.openstreetmap.org` |
 | `OSM_USER_AGENT` | voliteľné; identifikácia voči Nominatim |
 
-Podrobnosti a odhad septembrového šumu: [docs/ALERT-hluk.md](docs/ALERT-hluk.md).
+Podrobnosti, archív a odhad septembrového šumu: [docs/ALERT-hluk.md](docs/ALERT-hluk.md).
+
+Archivácia starých auto-ticketov (až po merge, nie z tohto agenta):
+
+```bash
+DATABASE_URL='…' npm run tickets:archive:dry -- --before=2026-10-16T23:59:59.000Z
+DATABASE_URL='…' npm run tickets:archive -- --before=2026-10-16T23:59:59.000Z
+```
 
 Odhad vzdialenosti a času trasy ide cez **OpenStreetMap** (Nominatim geocode + OSRM route), nie cez Google Maps billing. Apka beží aj bez týchto premenných. Ak verejné demo servery zlyhajú, v UI sa ukáže „Vzdialenosť sa nepodarilo spočítať“ a výjazd sa aj tak uloží. Pre produkčnú záťaž môžeš nasadiť vlastný OSRM/Nominatim a nastaviť URL.
 

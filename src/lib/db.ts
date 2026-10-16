@@ -82,6 +82,13 @@ export async function ensureSchema() {
         CREATE INDEX IF NOT EXISTS tickets_device_uuid_idx ON tickets (device_uuid)
       `;
       await sql`
+        ALTER TABLE tickets
+        ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS tickets_archived_at_idx ON tickets (archived_at)
+      `;
+      await sql`
         CREATE INDEX IF NOT EXISTS tickets_alert_open_idx
         ON tickets (source, alert_type, device_uuid, status)
       `;
@@ -240,6 +247,11 @@ function rowToTicket(row: Record<string, unknown>): Ticket {
         : String(row.updated_at),
     source: (row.source as Ticket["source"]) || "manual",
     alertType: (row.alert_type as Ticket["alertType"]) || undefined,
+    archivedAt: row.archived_at
+      ? row.archived_at instanceof Date
+        ? row.archived_at.toISOString()
+        : String(row.archived_at)
+      : undefined,
   };
 }
 
@@ -271,7 +283,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         id, number, title, description,
         device_type, device_serial, device_uuid,
         customer_name, customer_phone, assigned_to,
-        status, priority, notes, source, alert_type,
+        status, priority, notes, source, alert_type, archived_at,
         created_at, updated_at
       ) VALUES (
         ${ticket.id},
@@ -289,6 +301,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         ${JSON.stringify(ticket.notes)}::jsonb,
         ${ticket.source || "manual"},
         ${ticket.alertType ?? null},
+        ${ticket.archivedAt ?? null}::timestamptz,
         ${ticket.createdAt}::timestamptz,
         ${ticket.updatedAt}::timestamptz
       )
@@ -307,6 +320,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         notes = EXCLUDED.notes,
         source = EXCLUDED.source,
         alert_type = EXCLUDED.alert_type,
+        archived_at = EXCLUDED.archived_at,
         updated_at = EXCLUDED.updated_at
     `;
   }

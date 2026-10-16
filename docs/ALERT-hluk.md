@@ -29,9 +29,38 @@ Zmazané:
 
 Existujúce tickety a výjazdy sa **nemažú**. Žiadna tabuľka sa nedropuje.
 
+## Archív (staré Balena auto-tickety)
+
+Tickety majú flag `archivedAt` (stav otvorené/hotové ostáva). Predvolený zoznam a štatistiky **archív nezobrazia**. Filter **Archív** na `/` je len na čítanie a ide vyhľadávať.
+
+Jednorazová, **idempotentná** migrácia po merge — archivuje **všetky existujúce auto (Balena) tickety** s `createdAt` pred cutoffom (otvorené aj zatvorené). Ručné tickety ostanú nedotknuté. Nič sa nemaže. **Nespúšťať proti produkcii z tohto PR; spustí Martin / bot po merge.**
+
+```bash
+# 1) schema (ak ešte nebežala)
+DATABASE_URL='…' npm run db:migrate
+
+# 2) najprv suchý beh — vypíše wouldArchive, nič nezapíše
+DATABASE_URL='…' npm run tickets:archive:dry -- --before=2026-10-16T23:59:59.000Z
+
+# 3) ostrý beh (ten istý cutoff; druhý raz archived=0)
+DATABASE_URL='…' npm run tickets:archive -- --before=2026-10-16T23:59:59.000Z
+```
+
+Cutoff: `--before=ISO` alebo env `ARCHIVE_AUTO_TICKETS_BEFORE`. Bez neho = teraz (všetky auto tickety existujúce v momente spustenia).
+
+API predvolene archív **nevracia**. Parameter `archiv`:
+
+- nič / `0` / `hide` — bez archívu (default)
+- `only` — len archív
+- `1` / `all` — všetko
+
+Platí pre `GET /api/v1/tickets` a `GET /api/v1/prevadzky/otvorene-tickety`.
+
 ### API pre Servis bot (história + otvorené tickety)
 
 Bearer token ako v API PR (`SERVIS_BOT_API_TOKEN`). Pri Deployment Protection aj `x-vercel-protection-bypass`.
+
+**`GET /api/v1/tickets`** — zoznam. Predvolene **bez archívu**. Query `archiv=only` / `archiv=1` (all), plus `status`, `source`, `q`, `device`.
 
 **`GET /api/v1/zariadenia/:uuid/udalosti?dni=7`** — história alertov a flap:
 

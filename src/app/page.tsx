@@ -17,6 +17,7 @@ type SearchParams = Promise<{
   status?: string;
   source?: string;
   q?: string;
+  archiv?: string;
 }>;
 
 const FILTERS: Array<{ key: TicketStatus | "vsetky"; label: string }> = [
@@ -37,8 +38,10 @@ function ticketsHref(opts: {
   status?: TicketStatus | "vsetky";
   source?: TicketSource | "vsetky";
   q?: string;
+  archiv?: boolean;
 }) {
   const params = new URLSearchParams();
+  if (opts.archiv) params.set("archiv", "1");
   if (opts.status && opts.status !== "vsetky") params.set("status", opts.status);
   if (opts.source && opts.source !== "vsetky") params.set("source", opts.source);
   if (opts.q?.trim()) params.set("q", opts.q.trim());
@@ -58,9 +61,10 @@ export default async function Home({
   const source: TicketSource | "vsetky" =
     sourceRaw === "manual" || sourceRaw === "auto" ? sourceRaw : "vsetky";
   const q = params.q ?? "";
+  const archiv = params.archiv === "1" || params.archiv === "only";
 
   const [tickets, stats, deviceStats] = await Promise.all([
-    listTickets({ status, source, q }),
+    listTickets({ status, source, q, archived: archiv ? "only" : "hide" }),
     getStats(),
     getDeviceStats(),
   ]);
@@ -69,8 +73,14 @@ export default async function Home({
     <div className="shell space-y-6">
       <section className="fade-up space-y-3">
         <h1 className="max-w-2xl text-4xl font-extrabold leading-tight text-[var(--ink)] md:text-5xl">
-          ServisList
+          {archiv ? "Archív ticketov" : "ServisList"}
         </h1>
+        {archiv ? (
+          <p className="max-w-2xl text-[var(--ink-soft)]">
+            Len na čítanie. Ručné tickety tu nie sú — archív je pre staré
+            Balena auto-tickety pred novými pravidlami.
+          </p>
+        ) : null}
         <div className="flex flex-wrap gap-2 pt-1">
           <Link href="/novy" className="btn btn-primary">
             + Nový problém
@@ -117,6 +127,7 @@ export default async function Home({
         <div className="flex flex-col gap-4 border-b border-[var(--line)] p-4 md:p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <form className="flex w-full flex-col gap-3 md:max-w-md md:flex-row">
+              {archiv ? <input type="hidden" name="archiv" value="1" /> : null}
               <input type="hidden" name="status" value={status} />
               {source !== "vsetky" ? (
                 <input type="hidden" name="source" value={source} />
@@ -141,13 +152,28 @@ export default async function Home({
               {FILTERS.map((f) => (
                 <Link
                   key={f.key}
-                  href={ticketsHref({ status: f.key, source, q })}
+                  href={ticketsHref({ status: f.key, source, q, archiv })}
                   className="filter-pill"
-                  data-active={status === f.key}
+                  data-active={!archiv && status === f.key}
                 >
                   {f.label}
                 </Link>
               ))}
+              <Link
+                href={ticketsHref({ status: "vsetky", source, q, archiv: true })}
+                className="filter-pill"
+                data-active={archiv}
+              >
+                Archív{stats.archived ? ` (${stats.archived})` : ""}
+              </Link>
+              {archiv ? (
+                <Link
+                  href={ticketsHref({ status: "vsetky", source, q })}
+                  className="filter-pill"
+                >
+                  Späť na aktívne
+                </Link>
+              ) : null}
             </div>
           </div>
 
@@ -155,7 +181,7 @@ export default async function Home({
             {SOURCE_FILTERS.map((f) => (
               <Link
                 key={f.key}
-                href={ticketsHref({ status, source: f.key, q })}
+                href={ticketsHref({ status, source: f.key, q, archiv })}
                 className="filter-pill"
                 data-active={source === f.key}
               >
@@ -167,13 +193,19 @@ export default async function Home({
 
         {tickets.length === 0 ? (
           <div className="space-y-3 p-8 text-center">
-            <p className="text-lg font-semibold">Žiadne tickety</p>
-            <p className="text-[var(--ink-soft)]">
-              Zatiaľ nič nezodpovedá filtru. Pridaj nový problém.
+            <p className="text-lg font-semibold">
+              {archiv ? "Archív je prázdny" : "Žiadne tickety"}
             </p>
-            <Link href="/novy" className="btn btn-primary">
-              + Nový problém
-            </Link>
+            <p className="text-[var(--ink-soft)]">
+              {archiv
+                ? "Žiadny archivovaný ticket nezodpovedá filtru."
+                : "Zatiaľ nič nezodpovedá filtru. Pridaj nový problém."}
+            </p>
+            {archiv ? null : (
+              <Link href="/novy" className="btn btn-primary">
+                + Nový problém
+              </Link>
+            )}
           </div>
         ) : (
           <ul>
@@ -210,6 +242,9 @@ export default async function Home({
                     </span>
                     {ticket.source === "auto" ? (
                       <span className="chip chip-warn">Auto</span>
+                    ) : null}
+                    {ticket.archivedAt ? (
+                      <span className="chip chip-overdue">Archív</span>
                     ) : null}
                   </div>
                 </Link>
