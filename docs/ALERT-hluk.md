@@ -33,7 +33,9 @@ Existujúce tickety a výjazdy sa **nemažú**. Žiadna tabuľka sa nedropuje.
 
 Tickety majú flag `archivedAt` (stav otvorené/hotové ostáva). Predvolený zoznam a štatistiky **archív nezobrazia**. Filter **Archív** na `/` je len na čítanie a ide vyhľadávať.
 
-Jednorazová, **idempotentná** migrácia po merge — archivuje **všetky existujúce auto (Balena) tickety** s `createdAt` pred cutoffom (otvorené aj zatvorené). Ručné tickety ostanú nedotknuté. Nič sa nemaže. **Nespúšťať proti produkcii z tohto PR; spustí Martin / bot po merge.**
+Jednorazová, **idempotentná** migrácia — archivuje **všetky existujúce auto (Balena) tickety** s `createdAt` pred `2026-10-16T23:59:59.000Z` (otvorené aj zatvorené). Ručné tickety ostanú nedotknuté. Nič sa nemaže.
+
+Na produkcii to spustí **prvý request** po deploji (`ensureSchema`): jeden `UPDATE tickets … WHERE source = 'auto' AND archived_at IS NULL`, potom `app_meta.archive_auto_before_2026-10-16` = počet. Ďalší request / iná inštancia kľúč vidí a preskočí. Skript ostáva ako záloha:
 
 ```bash
 # 1) schema (ak ešte nebežala)

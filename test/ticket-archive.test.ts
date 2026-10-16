@@ -3,7 +3,10 @@ import { describe, test } from "node:test";
 import {
   archiveLegacyAutoTickets,
   isLegacyAutoTicket,
+  LEGACY_AUTO_ARCHIVE_CUTOFF,
+  LEGACY_AUTO_ARCHIVE_META_KEY,
   matchesArchivedFilter,
+  mergeLegacyArchiveCounts,
   parseArchivedQuery,
   selectLegacyAutoTickets,
 } from "../src/lib/ticket-archive";
@@ -93,5 +96,29 @@ describe("ticket archive", () => {
       first.tickets.find((t) => t.id === "auto-old")?.archivedAt,
       "2026-10-16T22:05:00.000Z",
     );
+  });
+
+  test("produkčný cutoff berie auto pred 2026-10-16T23:59:59Z, nie ručné", () => {
+    const before = new Date(LEGACY_AUTO_ARCHIVE_CUTOFF);
+    assert.equal(LEGACY_AUTO_ARCHIVE_META_KEY, "archive_auto_before_2026-10-16");
+    const tickets = [
+      ticket({ id: "auto-sep", source: "auto", createdAt: "2026-09-12T08:00:00.000Z" }),
+      ticket({ id: "auto-same-day", source: "auto", createdAt: "2026-10-16T21:45:00.000Z" }),
+      ticket({
+        id: "auto-on-cutoff",
+        source: "auto",
+        createdAt: LEGACY_AUTO_ARCHIVE_CUTOFF,
+      }),
+      ticket({ id: "manual-old", source: "manual", createdAt: "2026-09-12T08:00:00.000Z" }),
+    ];
+    const selected = selectLegacyAutoTickets(tickets, before).map((t) => t.id);
+    assert.deepEqual(selected, ["auto-sep", "auto-same-day"]);
+  });
+
+  test("race na app_meta count berie väčšie číslo", () => {
+    assert.equal(mergeLegacyArchiveCounts("", "3356"), "3356");
+    assert.equal(mergeLegacyArchiveCounts("3356", "0"), "3356");
+    assert.equal(mergeLegacyArchiveCounts("0", "3356"), "3356");
+    assert.equal(mergeLegacyArchiveCounts("12", "3"), "12");
   });
 });
