@@ -2,7 +2,7 @@ import { cookies, headers } from "next/headers";
 import {
   KONTROLA_COOKIE,
   clearLoginFailures,
-  getKontrolaPassword,
+  getKontrolaSecret,
   isKontrolaConfigured,
   kontrolaCookieOptions,
   loginBackoff,
@@ -16,10 +16,10 @@ import {
 export { isKontrolaConfigured };
 
 export async function isKontrolaUnlocked() {
-  const password = getKontrolaPassword();
-  if (!password) return false;
+  const secret = getKontrolaSecret();
+  if (!secret) return false;
   const jar = await cookies();
-  return verifyKontrolaToken(jar.get(KONTROLA_COOKIE)?.value ?? "", password);
+  return verifyKontrolaToken(jar.get(KONTROLA_COOKIE)?.value ?? "", secret);
 }
 
 export async function requireKontrolaSession() {
@@ -38,10 +38,10 @@ export async function kontrolaLoginKey() {
 }
 
 export async function establishKontrolaSession() {
-  const password = getKontrolaPassword();
-  if (!password) return false;
+  const secret = getKontrolaSecret();
+  if (!secret) return false;
   const jar = await cookies();
-  jar.set(KONTROLA_COOKIE, signKontrolaToken(password), kontrolaCookieOptions());
+  jar.set(KONTROLA_COOKIE, signKontrolaToken(secret), kontrolaCookieOptions());
   return true;
 }
 
@@ -67,5 +67,6 @@ export async function attemptKontrolaLogin(password: string) {
   }
   clearLoginFailures(key);
   await establishKontrolaSession();
-  return { ok: true as const };
+  const token = signKontrolaToken();
+  return { ok: true as const, token };
 }

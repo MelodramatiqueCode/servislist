@@ -15,42 +15,53 @@ export function getKontrolaPassword() {
   return process.env.KONTROLA_PASSWORD?.trim() || "";
 }
 
+export function getKontrolaPasswordHash() {
+  return (process.env.KONTROLA_PASSWORD_SHA256 ?? "").trim().toLowerCase();
+}
+
+export function getKontrolaSecret() {
+  return getKontrolaPasswordHash() || getKontrolaPassword();
+}
+
 export function isKontrolaConfigured() {
-  return Boolean(getKontrolaPassword());
+  return Boolean(getKontrolaPasswordHash() || getKontrolaPassword());
 }
 
 export function hashUtf8(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-export function verifyKontrolaPassword(input: string, expected = getKontrolaPassword()) {
+export function verifyKontrolaPassword(input: string) {
+  const hash = getKontrolaPasswordHash();
+  if (hash) return safeEqualHex(hashUtf8(input), hash);
+  const expected = getKontrolaPassword();
   if (!expected) return false;
   return safeEqualHex(hashUtf8(input), hashUtf8(expected));
 }
 
 export function signKontrolaToken(
-  password = getKontrolaPassword(),
+  secret = getKontrolaSecret(),
   now = Date.now(),
 ) {
-  if (!password) return "";
+  if (!secret) return "";
   const exp = now + SESSION_MS;
   const payload = `v1.${exp}`;
-  const sig = createHmac("sha256", password).update(payload).digest("hex");
+  const sig = createHmac("sha256", secret).update(payload).digest("hex");
   return `${payload}.${sig}`;
 }
 
 export function verifyKontrolaToken(
   token: string,
-  password = getKontrolaPassword(),
+  secret = getKontrolaSecret(),
   now = Date.now(),
 ) {
-  if (!password || !token) return false;
+  if (!secret || !token) return false;
   const parts = token.split(".");
   if (parts.length !== 3 || parts[0] !== "v1") return false;
   const exp = Number(parts[1]);
   const sig = parts[2] ?? "";
   if (!Number.isFinite(exp) || exp <= now) return false;
-  const expected = createHmac("sha256", password)
+  const expected = createHmac("sha256", secret)
     .update(`v1.${exp}`)
     .digest("hex");
   if (expected.length !== sig.length) {
