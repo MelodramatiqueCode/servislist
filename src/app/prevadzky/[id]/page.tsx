@@ -23,6 +23,7 @@ import { hardwareLabel } from "@/lib/parse-device";
 import {
   MATERIAL_STATUS_LABELS,
   materialTotal,
+  type MaterialItem,
 } from "@/lib/material";
 import {
   VYKAZ_TYPE_LABELS,
@@ -416,7 +417,11 @@ export default async function PrevadzkaDetailPage({
           <Section title="Materiál" icon="🧰" badge="ručne">
             <MaterialBlock
               items={detail.material}
-              ticketId={detail.tickets.find((t) => t.kind)?.id ?? ""}
+              ticketId={
+                detail.tickets.find((t) => t.kind)?.id ||
+                detail.material[0]?.ticketId ||
+                ""
+              }
               prevadzkaId={store.id}
             />
           </Section>
@@ -721,16 +726,7 @@ function MaterialBlock({
   ticketId,
   prevadzkaId,
 }: {
-  items: Array<{
-    id: string;
-    item: string;
-    quantity: number;
-    unit: string;
-    unitPrice: number | null;
-    note: string;
-    status: "planovane" | "pouzite";
-    ticketId: string;
-  }>;
+  items: MaterialItem[];
   ticketId: string;
   prevadzkaId: string;
 }) {
