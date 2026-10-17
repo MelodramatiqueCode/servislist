@@ -47,5 +47,8 @@ next-env.d.ts
 /data/vyjazdy.json
 /data/device-events.json
 /data/alert-pending.json
+/data/sklad.json
+/data/kontrola.json
+/data/material.json
 !/data/.gitkeep
 !/data/balena-export.json
