@@ -22,6 +22,7 @@ type Search = Promise<{
   autor?: string;
   typ?: string;
   akcia?: string;
+  chyba?: string;
   e?: string;
 }>;
 
@@ -35,7 +36,7 @@ export default async function KontrolaPage({
     return <KontrolaLocked configured={false} />;
   }
   if (!(await isKontrolaUnlocked())) {
-    return <KontrolaLocked configured error={params.e} />;
+    return <KontrolaLocked configured error={params.chyba ?? params.e} />;
   }
   const snap = await kontrolaSnapshot();
   const audit = snap.audit.filter((row) => {
