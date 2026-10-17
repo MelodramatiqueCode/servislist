@@ -45,7 +45,7 @@ export default async function TicketDetailPage({
   const material = await listMaterial({ ticketId: ticket.id });
 
   return (
-    <div className="shell max-w-4xl space-y-6">
+    <div className="shell detail-page max-w-4xl space-y-8">
       <div className="fade-up space-y-3">
         <Link
           href={archived ? "/?archiv=1" : "/"}

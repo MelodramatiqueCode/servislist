@@ -72,7 +72,7 @@ export default async function VyjazdyPage({
   ]);
 
   return (
-    <div className="shell space-y-6">
+    <div className="shell page-stack space-y-6">
       <section className="fade-up space-y-3">
         <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--teal)]">
           Servisné výjazdy

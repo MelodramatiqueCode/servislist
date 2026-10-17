@@ -107,7 +107,7 @@ export default async function DevicesPage({
   };
 
   return (
-    <div className="shell space-y-6">
+    <div className="shell page-stack space-y-6">
       <section className="fade-up space-y-3">
         <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--teal)]">
           Balena flotila
@@ -143,7 +143,7 @@ export default async function DevicesPage({
         </div>
         <div className="stat">
           <span className="text-sm text-[var(--ink-soft)]">Undervolt</span>
-          <strong className={stats.undervolt > 0 ? "text-[var(--warn)]" : ""}>
+          <strong className={stats.undervolt > 0 ? "text-[var(--acc)]" : ""}>
             {stats.undervolt}
           </strong>
         </div>
@@ -248,7 +248,7 @@ export default async function DevicesPage({
                 <Link
                   key={d.uuid}
                   href={`/zariadenia/${d.uuid}`}
-                  className="flex items-center gap-2 px-3 py-1.5 transition hover:bg-[var(--sand)] md:gap-3 md:px-4"
+                  className="flex items-center gap-2 px-3 py-1.5 transition hover:bg-[var(--paper-2)] md:gap-3 md:px-4"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -258,7 +258,14 @@ export default async function DevicesPage({
                       <span
                         className={`chip chip-compact ${d.isOnline ? "chip-ok" : "chip-danger"}`}
                       >
-                        {d.isOnline ? "Online" : "Offline"}
+                        {d.isOnline ? (
+                          <>
+                            <span className="pulse" />
+                            Online
+                          </>
+                        ) : (
+                          "Offline"
+                        )}
                       </span>
                       {longOffline && daysOff != null ? (
                         <span className="chip chip-compact chip-warn">

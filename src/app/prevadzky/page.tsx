@@ -28,7 +28,7 @@ export default async function PrevadzkyPage({
   );
 
   return (
-    <div className="shell space-y-6">
+    <div className="shell page-stack space-y-6">
       <section className="fade-up flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-2">
           <h1 className="text-4xl font-extrabold">Prevádzky</h1>

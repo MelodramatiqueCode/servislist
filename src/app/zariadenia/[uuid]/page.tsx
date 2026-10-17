@@ -48,7 +48,7 @@ export default async function DeviceDetailPage({
   const alert = hasHealthAlert(device);
 
   return (
-    <div className="shell max-w-4xl space-y-6">
+    <div className="shell detail-page max-w-4xl space-y-8">
       <div className="fade-up space-y-3">
         <Link
           href="/zariadenia"

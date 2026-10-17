@@ -421,6 +421,7 @@ export async function resolveSuggestionAction(formData: FormData) {
   const action = str(formData, "action") === "rejected" ? "rejected" : "accepted";
   if (!id) return;
   await resolveProfileSuggestion(id, action, str(formData, "author") || "Martin");
+  revalidatePath("/");
   revalidatePath("/prevadzky");
   if (storeId) revalidatePath(`/prevadzky/${storeId}`);
 }
@@ -429,6 +430,7 @@ export async function confirmPrevadzkaAction(formData: FormData) {
   const id = str(formData, "id");
   if (!id) return;
   await confirmPrevadzkaProposal(id, str(formData, "author") || "Martin");
+  revalidatePath("/");
   revalidatePath("/prevadzky");
   revalidatePath(`/prevadzky/${id}`);
 }

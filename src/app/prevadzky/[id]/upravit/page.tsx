@@ -22,7 +22,7 @@ export default async function UpravitPrevadzkuPage({
     : null;
 
   return (
-    <div className="shell max-w-5xl space-y-6">
+    <div className="shell detail-page max-w-5xl space-y-8">
       <PrevadzkaEditForm store={store} device={device} />
     </div>
   );

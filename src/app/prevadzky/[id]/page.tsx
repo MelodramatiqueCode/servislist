@@ -51,7 +51,7 @@ export default async function PrevadzkaDetailPage({
   const callContact = store.profile.contacts.find((c) => c.callBeforeVisit);
 
   return (
-    <div className="shell space-y-6">
+    <div className="shell detail-page space-y-8">
       <div className="fade-up space-y-3">
         <Link href="/prevadzky" className="text-sm font-semibold text-[var(--teal)]">
           ← Späť na prevádzky
