@@ -2,6 +2,7 @@ import Link from "next/link";
 import { resolveDlAction } from "@/lib/actions";
 import { SKLAD_KATEGORIE } from "@/lib/sklad";
 import { skladSnapshot } from "@/lib/sklad-store";
+import { DlFileLink } from "@/components/dl-file-link";
 import { formatDate } from "@/lib/format";
 
 type Search = Promise<{ q?: string; kat?: string; low?: string }>;
@@ -156,6 +157,12 @@ export default async function SkladPage({
                     </div>
                     <small>
                       {dl.dodavatel} · {dl.riadky.length} položiek · {dl.vytvoril}
+                      {dl.suborUrl ? (
+                        <>
+                          {" · "}
+                          <DlFileLink url={dl.suborUrl} name={dl.suborName} />
+                        </>
+                      ) : null}
                     </small>
                     <div className="mt-2 flex gap-2">
                       <form action={resolveDlAction}>

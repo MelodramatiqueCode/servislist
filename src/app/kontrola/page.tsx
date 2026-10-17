@@ -7,6 +7,7 @@ import {
   resolveNavrhAction,
   resolveSuggestionAction,
 } from "@/lib/actions";
+import { DlFileLink } from "@/components/dl-file-link";
 import { KontrolaLocked } from "@/components/kontrola-login";
 import { formatDateTime } from "@/lib/format";
 import { autorLabel, AUDIT_AUTORI, AUDIT_TYPY } from "@/lib/kontrola";
@@ -203,6 +204,7 @@ export default async function KontrolaPage({
                   ) : null}
                   {item.kind === "prijem" && item.dlId ? (
                     <>
+                      <DlFileLink url={item.suborUrl} name={item.suborName} />
                       <form action={resolveDlAction}>
                         <input type="hidden" name="id" value={item.dlId} />
                         <input type="hidden" name="action" value="accepted" />

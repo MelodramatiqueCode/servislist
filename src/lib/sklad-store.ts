@@ -6,7 +6,6 @@ import { listMaterial } from "./material-store";
 import { listTickets } from "./store";
 import {
   CATALOG_SEED,
-  DL_FILE_MAX_BYTES,
   normalizeName,
   parseDlStav,
   parseJednotka,
@@ -22,6 +21,7 @@ import {
   type SkladPohyb,
   type SkladPolozka,
 } from "./sklad";
+import { dlFileViewUrl, inspectDlFile, type DlFileBytes } from "./sklad-upload";
 
 type FileBlob = {
   polozky: SkladPolozka[];
@@ -424,26 +424,26 @@ export async function createDodaciList(input: {
   zdroj?: "web" | "servis_bot";
   vytvoril: string;
   riadky: DodaciListRiadok[];
-  file?: { name: string; mime: string; bytes: Buffer };
+  file?: DlFileBytes;
 }): Promise<DodaciList> {
   await ensureSchemaIfNeeded();
   const id = randomUUID();
   let suborUrl = "";
   let suborName = "";
   let suborMime = "";
+  let fileBytes: Buffer | null = null;
   if (input.file) {
-    if (input.file.bytes.length > DL_FILE_MAX_BYTES) {
-      throw new Error("Súbor dodacieho listu je väčší ako 4 MB.");
-    }
-    suborName = input.file.name;
-    suborMime = input.file.mime || "application/octet-stream";
-    suborUrl = `/api/sklad/dl/${id}/subor`;
+    const file = inspectDlFile(input.file);
+    suborName = file.name;
+    suborMime = file.mime;
+    suborUrl = dlFileViewUrl(id);
+    fileBytes = file.bytes;
     if (!isDatabaseConfigured()) {
       const blob = await readBlob();
       blob.files[id] = {
         name: suborName,
         mime: suborMime,
-        data: input.file.bytes.toString("base64"),
+        data: fileBytes.toString("base64"),
       };
       await writeBlob(blob);
     }
@@ -473,7 +473,7 @@ export async function createDodaciList(input: {
       ) VALUES (
         ${row.id}, ${row.dodavatel}, ${row.cisloDl}, ${row.datum}::timestamptz,
         ${row.suborUrl}, ${row.suborName}, ${row.suborMime},
-        ${input.file ? input.file.bytes : null},
+        ${fileBytes},
         ${row.stav}, ${row.zdroj}, ${row.vytvoril}, '', NULL,
         ${JSON.stringify(row.riadky)}::jsonb, ${row.createdAt}::timestamptz
       )
@@ -496,6 +496,70 @@ export async function createDodaciList(input: {
     /* audit must never break a mutation */
   }
   return row;
+}
+
+/**
+ * Príloha ostáva natrvalo. Nesmie sa mazať pri schválení, zamietnutí
+ * ani pri ďalšom uploade — druhý súbor sa neprepíše.
+ */
+export async function attachDodaciListFile(
+  id: string,
+  file: DlFileBytes,
+): Promise<
+  | { ok: true; list: DodaciList }
+  | { ok: false; reason: "not_found" | "not_pending" | "exists"; list: DodaciList | null }
+> {
+  const current = await getDodaciList(id);
+  if (!current) return { ok: false, reason: "not_found", list: null };
+  if (current.stav !== "cakajuci") {
+    return { ok: false, reason: "not_pending", list: current };
+  }
+  if (current.suborUrl || current.suborName || (await getDlFile(id))) {
+    return { ok: false, reason: "exists", list: current };
+  }
+  const checked = inspectDlFile(file);
+  const next: DodaciList = {
+    ...current,
+    suborUrl: dlFileViewUrl(current.id),
+    suborName: checked.name,
+    suborMime: checked.mime,
+  };
+  if (isDatabaseConfigured()) {
+    await ensureSchema();
+    const sql = getSql();
+    await sql`
+      UPDATE dodacie_listy SET
+        subor_url = ${next.suborUrl},
+        subor_name = ${next.suborName},
+        subor_mime = ${next.suborMime},
+        subor_bytes = ${checked.bytes}
+      WHERE id = ${current.id}
+        AND stav = 'cakajuci'
+        AND (subor_url = '' OR subor_url IS NULL)
+    `;
+  } else {
+    const blob = await readBlob();
+    blob.files[current.id] = {
+      name: checked.name,
+      mime: checked.mime,
+      data: checked.bytes.toString("base64"),
+    };
+    blob.listy = blob.listy.map((d) => (d.id === current.id ? next : d));
+    await writeBlob(blob);
+  }
+  try {
+    const { writeAudit } = await import("./kontrola-store");
+    await writeAudit({
+      autor: current.vytvoril,
+      typ: "sklad",
+      akcia: "priloha",
+      entityId: current.id,
+      popis: `Príloha k príjmu ${current.cisloDl || current.id} · ${checked.name}`,
+    });
+  } catch {
+    /* audit must never break a mutation */
+  }
+  return { ok: true, list: next };
 }
 
 export async function getDlFile(id: string) {
@@ -533,6 +597,7 @@ export async function resolveDodaciList(
 ) {
   const current = await getDodaciList(id);
   if (!current || current.stav !== "cakajuci") return current;
+  // Súbor ostáva na riadku — neschvaľovanie ani zamietnutie ho nemaže.
   if (action === "rejected") {
     return setDlStav(current, "zamietnuty", author);
   }
@@ -712,6 +777,8 @@ export function serializeDl(list: DodaciList) {
     cisloDl: list.cisloDl,
     datum: list.datum,
     suborUrl: list.suborUrl,
+    suborName: list.suborName,
+    suborMime: list.suborMime,
     stav: list.stav,
     zdroj: list.zdroj,
     vytvoril: list.vytvoril,

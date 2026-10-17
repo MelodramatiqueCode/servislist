@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { formatDate } from "@/lib/format";
 import { POHYB_TYPY } from "@/lib/sklad";
-import { listPolozky, listPohyby } from "@/lib/sklad-store";
+import { DlFileLink } from "@/components/dl-file-link";
+import { listDodacieListy, listPolozky, listPohyby } from "@/lib/sklad-store";
 import { listPrevadzkaProfiles } from "@/lib/store";
 import { storeLabel } from "@/lib/prevadzka-store";
 
@@ -19,7 +20,7 @@ export default async function SkladPohybyPage({
   searchParams: Search;
 }) {
   const params = await searchParams;
-  const [pohyby, polozky, stores] = await Promise.all([
+  const [pohyby, polozky, stores, listy] = await Promise.all([
     listPohyby({
       typ: POHYB_TYPY.includes(params.typ as never)
         ? (params.typ as (typeof POHYB_TYPY)[number])
@@ -31,9 +32,11 @@ export default async function SkladPohybyPage({
     }),
     listPolozky(),
     listPrevadzkaProfiles(),
+    listDodacieListy(),
   ]);
   const byId = new Map(polozky.map((p) => [p.id, p]));
   const storeById = new Map(stores.map((s) => [s.id, s]));
+  const dlById = new Map(listy.map((d) => [d.id, d]));
 
   return (
     <div className="shell page-stack space-y-6">
@@ -90,6 +93,7 @@ export default async function SkladPohybyPage({
               <th>Typ</th>
               <th>Položka</th>
               <th>Množstvo</th>
+              <th>Doklad</th>
               <th>Prevádzka</th>
               <th>Kto</th>
             </tr>
@@ -106,6 +110,20 @@ export default async function SkladPohybyPage({
                 </td>
                 <td className={p.mnozstvo >= 0 ? "text-[var(--ok)]" : "text-[var(--danger)]"}>
                   {p.mnozstvo > 0 ? `+${p.mnozstvo}` : p.mnozstvo}
+                </td>
+                <td>
+                  {p.dodaciListId ? (
+                    dlById.get(p.dodaciListId)?.suborUrl ? (
+                      <DlFileLink
+                        url={dlById.get(p.dodaciListId)?.suborUrl}
+                        name={dlById.get(p.dodaciListId)?.suborName || "DL"}
+                      />
+                    ) : (
+                      "DL"
+                    )
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td>
                   {p.prevadzkaId

@@ -458,10 +458,70 @@ curl -sS -X POST https://servislist.vercel.app/api/v1/sklad/prijem \
 ```
 
 ```json
-{ "pending": true, "prijem": { "id": "…", "stav": "cakajuci", "zdroj": "servis_bot" } }
+{
+  "pending": true,
+  "prijem": { "id": "…", "stav": "cakajuci", "zdroj": "servis_bot", "suborUrl": "" },
+  "subor": null
+}
 ```
 
-Stav skladu sa nezmení, kým Martin príjem neschváli. Po schválení vzniknú pohyby `prijem`.
+Stav skladu sa nezmení, kým Martin príjem neschváli. Po schválení vzniknú pohyby `prijem`. Ceny sa neposielajú.
+
+Prílohu (foto DL / faktúra, max 4 MB, `jpg` / `png` / `webp` / `heic` / `pdf`) môže bot poslať hneď, alebo neskôr na čakajúci príjem, ktorý sám vytvoril. Súbor sa uloží rovnako ako z webu (`/api/sklad/dl/<id>/subor`) a **nikdy sa nemaže** — ani po schválení, ani po zamietnutí.
+
+#### Multipart
+
+Pole `data` = rovnaký JSON ako vyššie. Pole `subor` = súbor.
+
+```bash
+curl -sS -X POST https://servislist.vercel.app/api/v1/sklad/prijem \
+  -H "Authorization: Bearer $TOKEN" \
+  -F 'data={"dodavatel":"AudioTech","cisloDl":"DL-2026/10-0187","polozky":[{"kod":"SD-CARD","nazov":"SD karta","kategoria":"SD karty","mnozstvo":10}]}' \
+  -F "subor=@faktura.pdf;type=application/pdf"
+```
+
+#### JSON + base64
+
+```bash
+curl -sS -X POST https://servislist.vercel.app/api/v1/sklad/prijem \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dodavatel": "AudioTech",
+    "cisloDl": "DL-2026/10-0187",
+    "polozky": [
+      { "kod": "SD-CARD", "nazov": "SD karta", "kategoria": "SD karty", "mnozstvo": 10 }
+    ],
+    "subor": { "nazov": "faktura.jpg", "mime": "image/jpeg", "base64": "'"$B64"'" }
+  }'
+```
+
+```json
+{
+  "pending": true,
+  "prijem": { "id": "…", "stav": "cakajuci", "suborUrl": "/api/sklad/dl/…/subor" },
+  "subor": { "id": "…", "url": "/api/sklad/dl/…/subor", "nazov": "faktura.jpg", "mime": "image/jpeg" }
+}
+```
+
+Neplatný MIME → `400`, súbor nad 4 MB → `413` (slovenské `message`).
+
+### `POST /api/v1/sklad/prijem/<id>/subor` — príloha k existujúcemu čakajúcemu príjmu
+
+Len príjem, ktorý vytvoril ten istý bot (`stav=cakajuci`). Ak už príloha je, API vráti `409` a súbor neprepisuje.
+
+```bash
+curl -sS -X POST https://servislist.vercel.app/api/v1/sklad/prijem/$ID/subor \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "subor=@faktura.pdf;type=application/pdf"
+```
+
+```bash
+curl -sS -X POST https://servislist.vercel.app/api/v1/sklad/prijem/$ID/subor \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "nazov": "faktura.jpg", "mime": "image/jpeg", "base64": "'"$B64"'" }'
+```
 
 ### Návrhy ticketov a výjazdov (čakajú na Martina)
 
