@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { CommandPalette } from "./command-palette";
@@ -22,8 +23,9 @@ export function SiteHeader({ pendingCount = 0 }: { pendingCount?: number }) {
   return (
     <header className="site-header">
       <div className="shell">
-        <Link href="/" className="brand">
-          <i>▶</i>Servis<span>List</span>
+        <Link href="/" className="brand" aria-label="ServisList">
+          <Image src="/brand-icon.svg" alt="" width={28} height={28} priority />
+          Servis<span>List</span>
         </Link>
         <nav className="top-nav">
           {NAV.map((item) => (
