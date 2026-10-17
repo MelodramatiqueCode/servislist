@@ -66,19 +66,12 @@ export function TicketCard({
       </Link>
       <div className="qa">
         {phone ? (
-          <a href={`tel:${phone}`} onClick={(e) => e.stopPropagation()}>
-            📞 Volať
-          </a>
+          <a href={`tel:${phone}`}>📞 Volať</a>
         ) : (
           <span className="pointer-events-none opacity-40">📞 Volať</span>
         )}
         {mapsHref ? (
-          <a
-            href={mapsHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <a href={mapsHref} target="_blank" rel="noopener noreferrer">
             🧭 Navigovať
           </a>
         ) : (
