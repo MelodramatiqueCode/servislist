@@ -615,7 +615,28 @@ export async function korekciaAction(formData: FormData) {
   revalidatePath("/sklad/pohyby");
 }
 
+export async function kontrolaLoginAction(formData: FormData) {
+  const { attemptKontrolaLogin } = await import("./kontrola-session");
+  const result = await attemptKontrolaLogin(str(formData, "password"));
+  if (result.ok) {
+    revalidatePath("/", "layout");
+    redirect("/kontrola");
+  }
+  if (result.reason === "limit") redirect("/kontrola?e=limit");
+  if (result.reason === "unset") redirect("/kontrola");
+  redirect("/kontrola?e=1");
+}
+
+export async function kontrolaLogoutAction() {
+  const { clearKontrolaSession } = await import("./kontrola-session");
+  await clearKontrolaSession();
+  revalidatePath("/", "layout");
+  redirect("/kontrola");
+}
+
 export async function resolveNavrhAction(formData: FormData) {
+  const { requireKontrolaSession } = await import("./kontrola-session");
+  await requireKontrolaSession();
   const { getNavrh, resolveNavrh } = await import("./kontrola-store");
   const id = str(formData, "id");
   if (!id) return;

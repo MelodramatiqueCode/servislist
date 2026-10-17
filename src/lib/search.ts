@@ -151,10 +151,20 @@ export function searchDevices(
     }));
 }
 
-export function searchCommands(q: string): SearchHit[] {
+export function visibleCommands(includeKontrola = false) {
+  return includeKontrola
+    ? SEARCH_COMMANDS
+    : SEARCH_COMMANDS.filter((cmd) => cmd.id !== "cmd-kontrola");
+}
+
+export function searchCommands(
+  q: string,
+  opts?: { includeKontrola?: boolean },
+): SearchHit[] {
+  const commands = visibleCommands(opts?.includeKontrola);
   const query = q.trim().toLowerCase();
-  if (!query) return SEARCH_COMMANDS;
-  return SEARCH_COMMANDS.filter((cmd) =>
+  if (!query) return commands;
+  return commands.filter((cmd) =>
     `${cmd.title} ${cmd.hint}`.toLowerCase().includes(query),
   );
 }
@@ -164,10 +174,11 @@ export function searchCatalog(input: {
   tickets: Ticket[];
   stores: PrevadzkaRecord[];
   devices: ServiceDevice[];
+  includeKontrola?: boolean;
 }) {
   const q = input.q.trim();
   return {
-    commands: searchCommands(q),
+    commands: searchCommands(q, { includeKontrola: input.includeKontrola }),
     tickets: searchTickets(input.tickets, q),
     stores: searchStores(input.stores, q),
     devices: searchDevices(input.devices, q),
