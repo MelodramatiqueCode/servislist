@@ -1,7 +1,14 @@
+export const SKLAD_KATEGORIA_FALLBACK = "Prehrávače (nešpecifikované)";
+export const SKLAD_KATEGORIA_LEGACY_RPI = "Prehrávače/RPi";
+
 export const SKLAD_KATEGORIE = [
   "Reproduktory",
   "Zosilňovače",
-  "Prehrávače/RPi",
+  "RPi 4",
+  "RPi 3",
+  "Zdroje RPi 4 (USB-C)",
+  "Zdroje RPi 3 (micro USB)",
+  SKLAD_KATEGORIA_FALLBACK,
   "SD karty",
   "Káble",
   "Tlačidlá",
@@ -79,9 +86,11 @@ export const CATALOG_SEED: Array<
   { kod: "RP-STR65", nazov: "Reproduktory stropné", kategoria: "Reproduktory", jednotka: "ks", minStav: 10 },
   { kod: "RP-BOX5", nazov: "Reproduktory nástenné", kategoria: "Reproduktory", jednotka: "ks", minStav: 4 },
   { kod: "ZS-AMP", nazov: "Zosilňovač", kategoria: "Zosilňovače", jednotka: "ks", minStav: 2 },
-  { kod: "PI-RPI", nazov: "Raspberry Pi", kategoria: "Prehrávače/RPi", jednotka: "ks", minStav: 5 },
+  { kod: "PI-RPI4", nazov: "RPi 4", kategoria: "RPi 4", jednotka: "ks", minStav: 2 },
+  { kod: "PI-RPI3", nazov: "RPi 3", kategoria: "RPi 3", jednotka: "ks", minStav: 2 },
+  { kod: "PI-PSU4", nazov: "Zdroj USB-C (RPi 4)", kategoria: "Zdroje RPi 4 (USB-C)", jednotka: "ks", minStav: 2 },
+  { kod: "PI-PSU3", nazov: "Zdroj micro USB (RPi 3)", kategoria: "Zdroje RPi 3 (micro USB)", jednotka: "ks", minStav: 2 },
   { kod: "SD-CARD", nazov: "SD karta", kategoria: "SD karty", jednotka: "ks", minStav: 10 },
-  { kod: "PI-PSU", nazov: "Napájací zdroj", kategoria: "Prehrávače/RPi", jednotka: "ks", minStav: 5 },
   { kod: "KB-REPRO", nazov: "Káble reproduktorové", kategoria: "Káble", jednotka: "m", minStav: 100 },
   { kod: "KB-CAB", nazov: "Káble", kategoria: "Káble", jednotka: "m", minStav: 20 },
   { kod: "TL-BTN", nazov: "Tlačidlá", kategoria: "Tlačidlá", jednotka: "ks", minStav: 5 },
@@ -90,9 +99,46 @@ export const CATALOG_SEED: Array<
 
 export function parseKategoria(raw: string | undefined | null): SkladKategoria | null {
   const value = String(raw ?? "").trim();
+  if (value === SKLAD_KATEGORIA_LEGACY_RPI) return SKLAD_KATEGORIA_FALLBACK;
   return (SKLAD_KATEGORIE as readonly string[]).includes(value)
     ? (value as SkladKategoria)
     : null;
+}
+
+export const RPI_STOCK_ITEMS = [
+  { kod: "PI-RPI4", nazov: "RPi 4", kategoria: "RPi 4" as SkladKategoria, jednotka: "ks" as const, minStav: 2 },
+  { kod: "PI-RPI3", nazov: "RPi 3", kategoria: "RPi 3" as SkladKategoria, jednotka: "ks" as const, minStav: 2 },
+  { kod: "PI-PSU4", nazov: "Zdroj USB-C (RPi 4)", kategoria: "Zdroje RPi 4 (USB-C)" as SkladKategoria, jednotka: "ks" as const, minStav: 2 },
+  { kod: "PI-PSU3", nazov: "Zdroj micro USB (RPi 3)", kategoria: "Zdroje RPi 3 (micro USB)" as SkladKategoria, jednotka: "ks" as const, minStav: 2 },
+] as const;
+
+/** Map old Prehrávače/RPi rows by name. Ambiguous names stay in the fallback. */
+export function mapLegacyRpiCategory(
+  nazov: string,
+  kod = "",
+): SkladKategoria {
+  const hay = normalizeName(`${nazov} ${kod}`);
+  const isPsu = /\b(zdroj|psu|napajac|adapter|usb c|usbc|micro usb|microusb)\b/.test(hay);
+  const hasUsbC = /\b(usb c|usbc|type c|typ c)\b/.test(hay);
+  const hasMicro = /\b(micro usb|microusb|micro)\b/.test(hay);
+  const isPi4 = /\b(rpi 4|rpi4|pi 4|pi4|raspberry pi 4|raspberry 4)\b/.test(hay);
+  const isPi3 = /\b(rpi 3|rpi3|pi 3|pi3|raspberry pi 3|raspberry 3)\b/.test(hay);
+
+  if (isPsu || hasUsbC || hasMicro) {
+    if (hasUsbC || (isPi4 && !isPi3 && !hasMicro)) return "Zdroje RPi 4 (USB-C)";
+    if (hasMicro || (isPi3 && !isPi4 && !hasUsbC)) return "Zdroje RPi 3 (micro USB)";
+    return SKLAD_KATEGORIA_FALLBACK;
+  }
+  if (isPi4 && !isPi3) return "RPi 4";
+  if (isPi3 && !isPi4) return "RPi 3";
+  return SKLAD_KATEGORIA_FALLBACK;
+}
+
+export function needsLegacyRpiMigration(kategoria: string) {
+  return (
+    kategoria === SKLAD_KATEGORIA_LEGACY_RPI ||
+    kategoria === "Prehravace/RPi"
+  );
 }
 
 export function parseJednotka(raw: string | undefined | null): SkladJednotka {
