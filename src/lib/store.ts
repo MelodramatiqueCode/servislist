@@ -33,6 +33,7 @@ import type {
   DeviceStore,
   ServiceDevice,
   Ticket,
+  TicketKind,
   TicketNote,
   TicketPriority,
   TicketSource,
@@ -43,7 +44,7 @@ import type {
   VyjazdStatus,
   VyjazdStore,
 } from "./types";
-import { STATUS_LABELS } from "./types";
+import { STATUS_LABELS, TICKET_KIND_LABELS } from "./types";
 import type { DeviceHealthFilter } from "./parse-device";
 import {
   buildMergedVyjazdPair,
@@ -60,6 +61,7 @@ import {
 import { estimateDrivingRoute, routeFingerprint } from "./route-estimate";
 import {
   archiveLegacyAutoTickets as applyArchiveLegacyAutoTickets,
+  archiveTicket,
   isTicketArchived,
   matchesArchivedFilter,
   type ArchivedFilter,
@@ -71,6 +73,28 @@ import {
   vyjazdMatchesPrevadzka,
 } from "./prevadzky";
 import { vyjazdCode } from "./format";
+import {
+  addPrevadzkaDevice,
+  appendPrevadzkaHistory,
+  backfillPrevadzkyFromDevices,
+  createManualPrevadzka,
+  getStoredPrevadzka,
+  listPrevadzkaDeviceUuids,
+  listStoredPrevadzky,
+  maybeWriteCloseVykaz,
+  setPrevadzkaStatus,
+  storeLabel,
+} from "./prevadzka-store";
+import {
+  JOB_TYPE_LABELS,
+  parseJobType,
+  type JobType,
+  type PrevadzkaRecord,
+  type StoreOpeningHours,
+  type StoreProfile,
+} from "./prevadzka-profile";
+import { materialTemplate, type MaterialInput } from "./material";
+import { replaceMaterial } from "./material-store";
 
 function dataDir() {
   return (
@@ -145,6 +169,8 @@ async function readTicketStore(): Promise<TicketStore> {
     source: t.source ?? "manual",
     archivedAt: t.archivedAt || undefined,
     clientRef: t.clientRef || undefined,
+    prevadzkaId: t.prevadzkaId || undefined,
+    kind: t.kind || undefined,
   }));
   return store;
 }
@@ -580,8 +606,11 @@ export async function listTickets(filters?: {
 
   if (filters?.prevadzka?.trim()) {
     const devices = (await readDeviceStore()).devices;
-    tickets = tickets.filter((t) =>
-      ticketMatchesPrevadzka(t, filters.prevadzka!, devices),
+    const stored = await getStoredPrevadzka(filters.prevadzka);
+    tickets = tickets.filter(
+      (t) =>
+        (stored && t.prevadzkaId === stored.id) ||
+        ticketMatchesPrevadzka(t, filters.prevadzka!, devices),
     );
   }
 
@@ -683,6 +712,8 @@ export async function createTicket(
     source: input.source ?? "manual",
     alertType: input.alertType,
     clientRef: clientRef || undefined,
+    prevadzkaId: input.prevadzkaId?.trim() || undefined,
+    kind: input.kind || undefined,
   };
 
   store.nextNumber += 1;
@@ -715,6 +746,9 @@ export async function updateTicketStatus(
     });
   }
   await writeTicketStore(store);
+  if (status === "hotove" && previous !== "hotove") {
+    await maybeWriteCloseVykaz(ticket);
+  }
   return ticket;
 }
 
@@ -1216,4 +1250,153 @@ export async function getVyjazdStats() {
         new Date(v.scheduledAt).getTime() < now,
     ).length,
   };
+}
+
+export async function ensurePrevadzkyCatalog() {
+  const devices = (await readDeviceStore()).devices;
+  return backfillPrevadzkyFromDevices(devices);
+}
+
+export async function listPrevadzkaProfiles(query?: string) {
+  await ensurePrevadzkyCatalog();
+  const q = query?.trim().toLowerCase() ?? "";
+  const stores = (await listStoredPrevadzky()).filter(
+    (s) => s.status !== "rejected",
+  );
+  if (!q) return stores;
+  return stores.filter((s) => {
+    const hay = [
+      s.name,
+      s.chain,
+      s.city,
+      s.address,
+      s.code,
+      s.phone,
+      s.storeKey,
+      s.id,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return hay.includes(q);
+  });
+}
+
+export async function getPrevadzkaProfile(ref: string) {
+  await ensurePrevadzkyCatalog();
+  return getStoredPrevadzka(ref);
+}
+
+export async function createPrevadzkaWithJob(input: {
+  name?: string;
+  chain?: string;
+  code?: string;
+  storeType?: string;
+  city?: string;
+  address?: string;
+  gpsLat?: string;
+  gpsLng?: string;
+  phone?: string;
+  openingHours?: StoreOpeningHours;
+  profile?: Partial<StoreProfile>;
+  jobType: JobType;
+  status?: PrevadzkaRecord["status"];
+  author?: string;
+  description?: string;
+  material?: MaterialInput[];
+  assignedTo?: string;
+  clientRef?: string;
+}) {
+  const jobType = parseJobType(input.jobType);
+  if (!jobType) {
+    throw new Error("Vyber typ zákazky: montáž ozvučenia alebo spustenie zariadenia.");
+  }
+  const kind: TicketKind =
+    jobType === "spustenie_zariadenia" ? "spustenie" : "montaz";
+  const store = await createManualPrevadzka({
+    ...input,
+    jobType,
+    status: input.status ?? "active",
+    author: input.author,
+  });
+  const title = TICKET_KIND_LABELS[kind];
+  const ticket = await createTicket(
+    {
+      title,
+      description:
+        input.description?.trim() ||
+        `${JOB_TYPE_LABELS[jobType]} — ${storeLabel(store)}`,
+      deviceType: "Raspberry Pi (Balena)",
+      deviceSerial: "",
+      customerName: storeLabel(store),
+      customerPhone: store.phone,
+      assignedTo: input.assignedTo?.trim() || "Nepriradené",
+      priority: "normalna",
+      source: "manual",
+      prevadzkaId: store.id,
+      kind,
+      clientRef: input.clientRef,
+    },
+    input.author
+      ? {
+          author: input.author,
+          note:
+            store.status === "pending"
+              ? "Návrh novej prevádzky cez API — čaká na schválenie."
+              : `Založené s prevádzkou (${JOB_TYPE_LABELS[jobType]}).`,
+        }
+      : undefined,
+  );
+  const rows = input.material?.length
+    ? input.material
+    : materialTemplate(jobType);
+  await replaceMaterial(ticket.id, store.id, rows);
+  return { store, ticket };
+}
+
+export async function confirmPrevadzkaProposal(id: string, author: string) {
+  return setPrevadzkaStatus(id, "active", author);
+}
+
+export async function rejectPrevadzkaProposal(id: string, author: string) {
+  const store = await setPrevadzkaStatus(id, "rejected", author);
+  if (!store) return null;
+  const ticketStore = await readTicketStore();
+  const stamp = nowIso();
+  let changed = false;
+  ticketStore.tickets = ticketStore.tickets.map((t) => {
+    if (t.prevadzkaId !== store.id || isTicketArchived(t)) return t;
+    changed = true;
+    return archiveTicket(t, stamp, author);
+  });
+  if (changed) await writeTicketStore(ticketStore);
+  return store;
+}
+
+export async function linkDeviceToPrevadzka(
+  prevadzkaId: string,
+  deviceUuid: string,
+  author = "Servis",
+) {
+  const store = await addPrevadzkaDevice(prevadzkaId, deviceUuid);
+  if (store) {
+    await appendPrevadzkaHistory(
+      store.id,
+      author,
+      `Pripojené zariadenie ${deviceUuid.slice(0, 8)}…`,
+    );
+  }
+  return store;
+}
+
+export async function devicesForPrevadzka(store: PrevadzkaRecord) {
+  const uuids = await listPrevadzkaDeviceUuids(store.id);
+  const all = (await readDeviceStore()).devices;
+  const linked = all.filter((d) => uuids.includes(d.uuid));
+  if (linked.length) return linked;
+  return all.filter((d) => {
+    const key = [d.partner, d.city, d.address]
+      .map((s) => (s ?? "").trim().toLowerCase())
+      .join("|");
+    return key === store.storeKey;
+  });
 }

@@ -16,7 +16,28 @@ import {
   updateTicketStatus,
   updateVyjazd,
   updateVyjazdStatus,
+  confirmPrevadzkaProposal,
+  createPrevadzkaWithJob,
+  linkDeviceToPrevadzka,
+  rejectPrevadzkaProposal,
 } from "./store";
+import {
+  addManualVykaz,
+  resolveProfileSuggestion,
+  updatePrevadzkaProfile,
+} from "./prevadzka-store";
+import {
+  hydrateOpeningHours,
+  hydrateProfile,
+  parseJobType,
+} from "./prevadzka-profile";
+import {
+  addMaterialItem,
+  deleteMaterialItem,
+  updateMaterialItem,
+} from "./material-store";
+import { parseMaterialList, parseMaterialStatus } from "./material";
+import { parseVykazType } from "./vykaz-prace";
 import { isTicketArchived } from "./ticket-archive";
 import {
   applyDeviceToTicketFields,
@@ -310,4 +331,197 @@ export async function deleteVyjazdAction(formData: FormData) {
   await deleteVyjazd(id);
   revalidatePath("/vyjazdy");
   redirect("/vyjazdy");
+}
+
+function parseJsonField(formData: FormData, key: string): unknown {
+  const raw = str(formData, key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function createPrevadzkaAction(formData: FormData) {
+  const jobType = parseJobType(str(formData, "jobType"));
+  if (!jobType) {
+    throw new Error("Vyber typ zákazky.");
+  }
+  const hours = parseJsonField(formData, "openingHoursJson");
+  const profile = parseJsonField(formData, "profileJson");
+  const material = parseMaterialList(parseJsonField(formData, "materialJson"));
+  const result = await createPrevadzkaWithJob({
+    name: str(formData, "name"),
+    chain: str(formData, "chain"),
+    code: str(formData, "code"),
+    storeType: str(formData, "storeType"),
+    city: str(formData, "city"),
+    address: str(formData, "address"),
+    gpsLat: str(formData, "gpsLat"),
+    gpsLng: str(formData, "gpsLng"),
+    phone: str(formData, "phone"),
+    openingHours: hours ? hydrateOpeningHours(hours) : undefined,
+    profile: profile ? hydrateProfile(profile) : undefined,
+    jobType,
+    status: "active",
+    author: str(formData, "author") || "Servis",
+    description: str(formData, "description"),
+    material,
+    assignedTo: str(formData, "assignedTo"),
+  });
+  revalidatePath("/prevadzky");
+  revalidatePath("/");
+  redirect(`/prevadzky/${result.store.id}`);
+}
+
+export async function updatePrevadzkaAction(formData: FormData) {
+  const id = str(formData, "id");
+  if (!id) return;
+  const hours = parseJsonField(formData, "openingHoursJson");
+  const profileRaw = parseJsonField(formData, "profileJson");
+  const extra: Record<string, string> = {};
+  for (const [key, value] of formData.entries()) {
+    if (key.startsWith("profile_")) {
+      extra[key.slice("profile_".length)] = String(value);
+    }
+  }
+  const profile =
+    profileRaw || Object.keys(extra).length
+      ? hydrateProfile({
+          ...(profileRaw && typeof profileRaw === "object" ? profileRaw : {}),
+          ...extra,
+        })
+      : undefined;
+  await updatePrevadzkaProfile(
+    id,
+    {
+      name: str(formData, "name") || undefined,
+      chain: str(formData, "chain") || undefined,
+      code: str(formData, "code") || undefined,
+      storeType: str(formData, "storeType") || undefined,
+      city: str(formData, "city") || undefined,
+      address: str(formData, "address") || undefined,
+      gpsLat: str(formData, "gpsLat") || undefined,
+      gpsLng: str(formData, "gpsLng") || undefined,
+      phone: str(formData, "phone") || undefined,
+      openingHours: hours ? hydrateOpeningHours(hours) : undefined,
+      profile,
+    },
+    str(formData, "author") || "Servis",
+  );
+  revalidatePath("/prevadzky");
+  revalidatePath(`/prevadzky/${id}`);
+  redirect(`/prevadzky/${id}`);
+}
+
+export async function resolveSuggestionAction(formData: FormData) {
+  const id = str(formData, "suggestionId");
+  const storeId = str(formData, "prevadzkaId");
+  const action = str(formData, "action") === "rejected" ? "rejected" : "accepted";
+  if (!id) return;
+  await resolveProfileSuggestion(id, action, str(formData, "author") || "Martin");
+  revalidatePath("/prevadzky");
+  if (storeId) revalidatePath(`/prevadzky/${storeId}`);
+}
+
+export async function confirmPrevadzkaAction(formData: FormData) {
+  const id = str(formData, "id");
+  if (!id) return;
+  await confirmPrevadzkaProposal(id, str(formData, "author") || "Martin");
+  revalidatePath("/prevadzky");
+  revalidatePath(`/prevadzky/${id}`);
+}
+
+export async function rejectPrevadzkaAction(formData: FormData) {
+  const id = str(formData, "id");
+  if (!id) return;
+  await rejectPrevadzkaProposal(id, str(formData, "author") || "Martin");
+  revalidatePath("/prevadzky");
+  revalidatePath(`/prevadzky/${id}`);
+  redirect("/prevadzky");
+}
+
+export async function addVykazAction(formData: FormData) {
+  const prevadzkaId = str(formData, "prevadzkaId");
+  const description = str(formData, "description");
+  if (!prevadzkaId || !description) return;
+  const durationRaw = str(formData, "durationMin");
+  await addManualVykaz({
+    prevadzkaId,
+    date: str(formData, "date") || new Date().toISOString(),
+    type: parseVykazType(str(formData, "type")) ?? "servis",
+    author: str(formData, "author") || "Servis",
+    description,
+    durationMin: durationRaw ? Number(durationRaw) : null,
+    ticketId: str(formData, "ticketId"),
+    vyjazdId: str(formData, "vyjazdId"),
+  });
+  revalidatePath(`/prevadzky/${prevadzkaId}`);
+}
+
+export async function linkDeviceAction(formData: FormData) {
+  const prevadzkaId = str(formData, "prevadzkaId");
+  const deviceUuid = str(formData, "deviceUuid");
+  if (!prevadzkaId || !deviceUuid) return;
+  await linkDeviceToPrevadzka(
+    prevadzkaId,
+    deviceUuid,
+    str(formData, "author") || "Servis",
+  );
+  revalidatePath("/prevadzky");
+  revalidatePath(`/prevadzky/${prevadzkaId}`);
+  revalidatePath(`/zariadenia/${deviceUuid}`);
+}
+
+export async function addMaterialAction(formData: FormData) {
+  const ticketId = str(formData, "ticketId");
+  const prevadzkaId = str(formData, "prevadzkaId");
+  const item = str(formData, "item");
+  if (!ticketId || !prevadzkaId || !item) return;
+  await addMaterialItem({
+    ticketId,
+    prevadzkaId,
+    item,
+    quantity: Number(str(formData, "quantity") || 1),
+    unit: str(formData, "unit") || "ks",
+    unitPrice: str(formData, "unitPrice")
+      ? Number(str(formData, "unitPrice"))
+      : null,
+    note: str(formData, "note"),
+    status: parseMaterialStatus(str(formData, "status")) ?? "planovane",
+  });
+  revalidatePath(`/ticket/${ticketId}`);
+  if (prevadzkaId) revalidatePath(`/prevadzky/${prevadzkaId}`);
+}
+
+export async function updateMaterialAction(formData: FormData) {
+  const id = str(formData, "id");
+  const ticketId = str(formData, "ticketId");
+  const prevadzkaId = str(formData, "prevadzkaId");
+  if (!id) return;
+  await updateMaterialItem(id, {
+    item: str(formData, "item") || undefined,
+    quantity: str(formData, "quantity")
+      ? Number(str(formData, "quantity"))
+      : undefined,
+    unit: str(formData, "unit") || undefined,
+    unitPrice: str(formData, "unitPrice")
+      ? Number(str(formData, "unitPrice"))
+      : undefined,
+    note: str(formData, "note"),
+    status: parseMaterialStatus(str(formData, "status")) ?? undefined,
+  });
+  if (ticketId) revalidatePath(`/ticket/${ticketId}`);
+  if (prevadzkaId) revalidatePath(`/prevadzky/${prevadzkaId}`);
+}
+
+export async function deleteMaterialAction(formData: FormData) {
+  const id = str(formData, "id");
+  const ticketId = str(formData, "ticketId");
+  const prevadzkaId = str(formData, "prevadzkaId");
+  if (!id) return;
+  await deleteMaterialItem(id);
+  if (ticketId) revalidatePath(`/ticket/${ticketId}`);
+  if (prevadzkaId) revalidatePath(`/prevadzky/${prevadzkaId}`);
 }

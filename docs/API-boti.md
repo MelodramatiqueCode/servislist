@@ -284,7 +284,7 @@ curl -sS "https://servislist.vercel.app/api/v1/zariadenia?q=Martin" \
 
 ### `GET /api/v1/prevadzky`
 
-Zoskupené z katalógu zariadení (`partner` + mesto + adresa).
+Karty prevádzok (tabuľka `prevadzky`, lazy backfill z `partner|mesto|adresa`). Každý záznam má profil, výkaz práce a materiál.
 
 ```bash
 curl -sS "https://servislist.vercel.app/api/v1/prevadzky?q=COOP" \
@@ -296,16 +296,108 @@ curl -sS "https://servislist.vercel.app/api/v1/prevadzky?q=COOP" \
   "count": 1,
   "prevadzky": [
     {
+      "id": "…",
       "key": "coop|martin|hlavná 1",
       "label": "#12 · COOP · Martin",
       "partner": "COOP",
       "city": "Martin",
+      "status": "active",
+      "profile": { "contacts": [], "speakersTotal": "" },
+      "vykaz": [],
+      "material": [],
+      "completeness": { "percent": 23, "missing": ["GPS"] },
       "deviceCount": 1,
-      "devices": [{ "uuid": "…", "name": "12-COOP Martin", "code": "12", "isOnline": true }]
+      "devices": [{ "uuid": "…", "name": "12-COOP Martin", "isOnline": true }]
     }
   ]
 }
 ```
+
+### `GET /api/v1/prevadzky/:id` — detail karty
+
+`:id` je UUID, `store_key` alebo kód predajne.
+
+```bash
+curl -sS https://servislist.vercel.app/api/v1/prevadzky/12 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Vracia `prevadzka` (celý profil), `vykaz`, `material`, `openTickets`, `suggestions`, `completeness`.
+
+### `POST /api/v1/prevadzky` — návrh novej prevádzky
+
+Vytvorí prevádzku v stave `pending` (návrh) + ticket montáže/spustenia + materiál. Martin schváli v UI.
+
+Povinné: `jobType` (`montaz_ozvucenia` \| `spustenie_zariadenia`) a aspoň jeden z `name` / `chain` / `city` / `address`.
+
+```bash
+curl -sS -X POST https://servislist.vercel.app/api/v1/prevadzky \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jobType": "montaz_ozvucenia",
+    "name": "Nová predajňa",
+    "chain": "COOP",
+    "city": "Nitra",
+    "address": "Hlavná 1",
+    "code": "300"
+  }'
+```
+
+Odpoveď: `pending: true`, `prevadzka`, `ticket`.
+
+### `PATCH /api/v1/prevadzky/:id` — návrh úpravy profilu
+
+Neuloží sa hneď. Vytvorí `profile_suggestions` — Martin schváli alebo zamietne na karte prevádzky.
+
+```bash
+curl -sS -X PATCH https://servislist.vercel.app/api/v1/prevadzky/12 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "profile": { "speakersTotal": "10" }, "code": "214" }'
+```
+
+### `POST /api/v1/prevadzky/:id/vykaz` — zápis do výkazu práce
+
+Fakt, nie návrh. Uloží sa hneď.
+
+```bash
+curl -sS -X POST https://servislist.vercel.app/api/v1/prevadzky/12/vykaz \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "servis",
+    "description": "Výmena zdroja, overené s vedúcou.",
+    "durationMin": 45
+  }'
+```
+
+Typy: `montaz`, `spustenie`, `servis`, `oprava`, `vymena_hw`, `demontaz`, `ine`.
+
+### Materiál na tickete
+
+`GET /api/v1/tickets/:id` vracia aj `material`.
+
+```bash
+curl -sS -X POST https://servislist.vercel.app/api/v1/tickets/12/material \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "item": "SD karta", "quantity": 1, "unit": "ks", "status": "planovane" }'
+```
+
+```bash
+curl -sS -X PATCH https://servislist.vercel.app/api/v1/tickets/12/material/ITEM_ID \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "status": "pouzite", "unitPrice": 6.5 }'
+```
+
+```bash
+curl -sS -X DELETE https://servislist.vercel.app/api/v1/tickets/12/material/ITEM_ID \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Stavy materiálu: `planovane` \| `pouzite`. Ticket montáže/spustenia pri uzavretí zapíše výkaz (montáž alebo spustenie) vrátane použitého materiálu.
 
 ---
 

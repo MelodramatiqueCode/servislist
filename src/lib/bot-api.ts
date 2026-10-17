@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { serializeDevice, serializePrevadzka, serializeTicket, serializeVyjazd, serializeVyjazdSummary } from "./api-serialize";
+import { serializeDevice, serializePrevadzkaProfile, serializeTicket, serializeVyjazd, serializeVyjazdSummary } from "./api-serialize";
 import { ApiError, asRecord, queryString } from "./api-http";
 import type { BotActor } from "./bot-auth";
 import {
@@ -10,13 +10,27 @@ import {
   getTicketByRef,
   getVyjazdByRef,
   linkTicketToVyjazd,
+  createPrevadzkaWithJob,
+  devicesForPrevadzka,
+  getPrevadzkaProfile,
   listDevices,
-  listPrevadzky,
+  listPrevadzkaProfiles,
   listTickets,
   listVyjazdy,
   updateTicketPriority,
   updateTicketStatus,
 } from "./store";
+import {
+  addManualVykaz,
+  createProfileSuggestion,
+  listMergedVykaz,
+  listPrevadzkaDeviceUuids,
+} from "./prevadzka-store";
+import { hydrateOpeningHours, hydrateProfile, parseJobType } from "./prevadzka-profile";
+import { listMaterial, addMaterialItem, updateMaterialItem, deleteMaterialItem, getMaterialItem, serializeMaterial } from "./material-store";
+import { parseMaterialList, parseMaterialStatus } from "./material";
+import { parseVykazType } from "./vykaz-prace";
+import { loadPrevadzkaDetail, serializeVykaz } from "./prevadzka-view";
 import { findDevicesForPrevadzka } from "./prevadzky";
 import {
   applyDeviceToTicketFields,
@@ -68,10 +82,14 @@ async function resolveVyjazdOrThrow(ref: string) {
 }
 
 async function ticketPayload(ticket: Ticket) {
-  const vyjazdy = await listVyjazdy({ ticketId: ticket.id });
+  const [vyjazdy, material] = await Promise.all([
+    listVyjazdy({ ticketId: ticket.id }),
+    listMaterial({ ticketId: ticket.id }),
+  ]);
   return {
     ticket: serializeTicket(ticket),
     vyjazdy: vyjazdy.map(serializeVyjazdSummary),
+    material: material.map(serializeMaterial),
   };
 }
 
@@ -484,9 +502,263 @@ export async function botGetDevice(uuid: string) {
 }
 
 export async function botListPrevadzky(url: URL) {
-  const prevadzky = await listPrevadzky(queryString(url, "q", "hladaj", "prevadzka"));
+  const q = queryString(url, "q", "hladaj", "prevadzka");
+  const stores = await listPrevadzkaProfiles(q);
+  const tickets = await listTickets({ archived: "all" });
+  const vyjazdy = await listVyjazdy();
+  const prevadzky = await Promise.all(
+    stores.map(async (store) => {
+      const devices = await devicesForPrevadzka(store);
+      const uuids = await listPrevadzkaDeviceUuids(store.id);
+      const vykaz = await listMergedVykaz(store, tickets, vyjazdy, [
+        ...devices.map((d) => d.uuid),
+        ...uuids,
+      ]);
+      const material = await listMaterial({ prevadzkaId: store.id });
+      return serializePrevadzkaProfile(store, { devices, vykaz, material });
+    }),
+  );
+  return { count: prevadzky.length, prevadzky };
+}
+
+export async function botGetPrevadzka(ref: string) {
+  const store = await getPrevadzkaProfile(ref);
+  if (!store) {
+    throw new ApiError(404, "not_found", `Prevádzka „${ref}“ sa nenašla.`);
+  }
+  const detail = await loadPrevadzkaDetail(store);
   return {
-    count: prevadzky.length,
-    prevadzky: prevadzky.map(serializePrevadzka),
+    prevadzka: serializePrevadzkaProfile(store, {
+      devices: detail.devices,
+      vykaz: detail.vykaz,
+      material: detail.material,
+    }),
+    vykaz: detail.vykaz.map(serializeVykaz),
+    material: detail.material.map(serializeMaterial),
+    openTickets: detail.openTickets.map(serializeTicket),
+    suggestions: detail.suggestions,
+    completeness: detail.completeness,
   };
+}
+
+export async function botPatchPrevadzka(
+  ref: string,
+  raw: unknown,
+  actor: BotActor,
+) {
+  const store = await getPrevadzkaProfile(ref);
+  if (!store) {
+    throw new ApiError(404, "not_found", `Prevádzka „${ref}“ sa nenašla.`);
+  }
+  const body = asRecord(raw);
+  const patch = collectStorePatch(body);
+  const suggestion = await createProfileSuggestion({
+    prevadzkaId: store.id,
+    actorId: actor.id,
+    actorName: actor.name,
+    patch,
+  });
+  if (!suggestion) {
+    throw new ApiError(404, "not_found", `Prevádzka „${ref}“ sa nenašla.`);
+  }
+  safeRevalidate("/prevadzky");
+  safeRevalidate(`/prevadzky/${store.id}`);
+  return {
+    suggestion,
+    pending: true,
+    message: "Návrh čaká na schválenie v UI.",
+  };
+}
+
+export async function botCreatePrevadzka(raw: unknown, actor: BotActor) {
+  const body = asRecord(raw);
+  const jobType = parseJobType(String(body.jobType ?? body.typ ?? ""));
+  if (!jobType) {
+    throw new ApiError(
+      400,
+      "validation_error",
+      "Vyber typ zákazky: montaz_ozvucenia alebo spustenie_zariadenia.",
+      { jobType: "Povinné pole." },
+    );
+  }
+  const name = String(body.name ?? body.nazov ?? "").trim();
+  const city = String(body.city ?? body.mesto ?? "").trim();
+  const address = String(body.address ?? body.adresa ?? "").trim();
+  const chain = String(body.chain ?? body.partner ?? body.retazec ?? "").trim();
+  if (!name && !city && !address && !chain) {
+    throw new ApiError(
+      400,
+      "validation_error",
+      "Zadaj aspoň názov, reťazec alebo adresu prevádzky.",
+      { name: "Chýba identifikácia prevádzky." },
+    );
+  }
+  const result = await createPrevadzkaWithJob({
+    name,
+    chain,
+    code: String(body.code ?? body.kod ?? "").trim(),
+    storeType: String(body.storeType ?? body.typPredajne ?? "").trim(),
+    city,
+    address,
+    gpsLat: String(body.gpsLat ?? body.lat ?? "").trim(),
+    gpsLng: String(body.gpsLng ?? body.lng ?? "").trim(),
+    phone: String(body.phone ?? body.telefon ?? "").trim(),
+    openingHours: body.openingHours
+      ? hydrateOpeningHours(body.openingHours)
+      : undefined,
+    profile: body.profile ? hydrateProfile(body.profile) : undefined,
+    jobType,
+    status: "pending",
+    author: actor.name,
+    description: String(body.description ?? body.popis ?? "").trim(),
+    material: parseMaterialList(body.material),
+    assignedTo: String(body.assignedTo ?? "").trim(),
+    clientRef: String(body.clientRef ?? body.client_ref ?? "").trim() || undefined,
+  });
+  safeRevalidate("/prevadzky");
+  safeRevalidate("/");
+  return {
+    pending: true,
+    message: "Návrh prevádzky čaká na schválenie Martina.",
+    prevadzka: serializePrevadzkaProfile(result.store),
+    ticket: serializeTicket(result.ticket),
+  };
+}
+
+export async function botAddVykaz(
+  ref: string,
+  raw: unknown,
+  actor: BotActor,
+) {
+  const store = await getPrevadzkaProfile(ref);
+  if (!store) {
+    throw new ApiError(404, "not_found", `Prevádzka „${ref}“ sa nenašla.`);
+  }
+  const body = asRecord(raw);
+  const type = parseVykazType(String(body.type ?? body.typ ?? "servis"));
+  const description = String(body.description ?? body.popis ?? "").trim();
+  if (!description) {
+    throw new ApiError(400, "validation_error", "Chýba popis práce.", {
+      description: "Vyplň, čo sa spravilo.",
+    });
+  }
+  const durationRaw = body.durationMin ?? body.duration_min ?? body.minuty;
+  const durationMin =
+    durationRaw == null || durationRaw === ""
+      ? null
+      : Number(durationRaw);
+  const entry = await addManualVykaz({
+    prevadzkaId: store.id,
+    date: String(body.date ?? body.datum ?? "") || new Date().toISOString(),
+    type: type ?? "servis",
+    author: actor.name,
+    description,
+    durationMin: Number.isFinite(durationMin as number)
+      ? (durationMin as number)
+      : null,
+    ticketId: String(body.ticketId ?? body.ticket ?? ""),
+    vyjazdId: String(body.vyjazdId ?? body.vyjazd ?? ""),
+  });
+  if (!entry) {
+    throw new ApiError(404, "not_found", `Prevádzka „${ref}“ sa nenašla.`);
+  }
+  safeRevalidate(`/prevadzky/${store.id}`);
+  return { entry: serializeVykaz(entry) };
+}
+
+export async function botAddMaterial(
+  ticketRef: string,
+  raw: unknown,
+  actor: BotActor,
+) {
+  const ticket = await resolveTicketOrThrow(ticketRef);
+  const body = asRecord(raw);
+  const item = String(body.item ?? body.polozka ?? "").trim();
+  if (!item) {
+    throw new ApiError(400, "validation_error", "Chýba položka materiálu.", {
+      item: "Vyplň názov.",
+    });
+  }
+  if (!ticket.prevadzkaId) {
+    throw new ApiError(
+      400,
+      "validation_error",
+      "Ticket nie je naviazaný na prevádzku.",
+    );
+  }
+  const created = await addMaterialItem({
+    ticketId: ticket.id,
+    prevadzkaId: ticket.prevadzkaId,
+    item,
+    quantity: Number(body.quantity ?? body.pocet ?? 1),
+    unit: String(body.unit ?? body.jednotka ?? "ks"),
+    unitPrice:
+      body.unitPrice == null && body.unit_price == null
+        ? null
+        : Number(body.unitPrice ?? body.unit_price),
+    note: String(body.note ?? body.poznamka ?? ""),
+    status: parseMaterialStatus(String(body.status ?? "planovane")) ?? "planovane",
+  });
+  void actor;
+  revalidateTicketPaths(ticket);
+  return { item: serializeMaterial(created) };
+}
+
+export async function botPatchMaterial(
+  ticketRef: string,
+  itemId: string,
+  raw: unknown,
+) {
+  const ticket = await resolveTicketOrThrow(ticketRef);
+  const current = await getMaterialItem(itemId);
+  if (!current || current.ticketId !== ticket.id) {
+    throw new ApiError(404, "not_found", "Položka materiálu sa nenašla.");
+  }
+  const body = asRecord(raw);
+  const updated = await updateMaterialItem(itemId, {
+    item: body.item != null ? String(body.item) : undefined,
+    quantity: body.quantity != null ? Number(body.quantity) : undefined,
+    unit: body.unit != null ? String(body.unit) : undefined,
+    unitPrice:
+      body.unitPrice === undefined && body.unit_price === undefined
+        ? undefined
+        : body.unitPrice == null && body.unit_price == null
+          ? null
+          : Number(body.unitPrice ?? body.unit_price),
+    note: body.note != null ? String(body.note) : undefined,
+    status: parseMaterialStatus(String(body.status ?? "")) ?? undefined,
+  });
+  revalidateTicketPaths(ticket);
+  return { item: updated ? serializeMaterial(updated) : null };
+}
+
+export async function botDeleteMaterial(ticketRef: string, itemId: string) {
+  const ticket = await resolveTicketOrThrow(ticketRef);
+  const current = await getMaterialItem(itemId);
+  if (!current || current.ticketId !== ticket.id) {
+    throw new ApiError(404, "not_found", "Položka materiálu sa nenašla.");
+  }
+  await deleteMaterialItem(itemId);
+  revalidateTicketPaths(ticket);
+  return { deleted: true, id: itemId };
+}
+
+function collectStorePatch(body: Record<string, unknown>) {
+  const patch: Parameters<typeof createProfileSuggestion>[0]["patch"] = {};
+  if (body.code != null) patch.code = String(body.code);
+  if (body.chain != null || body.partner != null) {
+    patch.chain = String(body.chain ?? body.partner);
+  }
+  if (body.storeType != null) patch.storeType = String(body.storeType);
+  if (body.name != null) patch.name = String(body.name);
+  if (body.city != null) patch.city = String(body.city);
+  if (body.address != null) patch.address = String(body.address);
+  if (body.gpsLat != null) patch.gpsLat = String(body.gpsLat);
+  if (body.gpsLng != null) patch.gpsLng = String(body.gpsLng);
+  if (body.phone != null) patch.phone = String(body.phone);
+  if (body.openingHours) patch.openingHours = hydrateOpeningHours(body.openingHours);
+  if (body.profile && typeof body.profile === "object") {
+    patch.profile = hydrateProfile(body.profile);
+  }
+  return patch;
 }

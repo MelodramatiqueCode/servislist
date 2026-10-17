@@ -209,6 +209,113 @@ export async function ensureSchema() {
           last_used_at TIMESTAMPTZ
         )
       `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS prevadzky (
+          id TEXT PRIMARY KEY,
+          store_key TEXT NOT NULL UNIQUE,
+          code TEXT NOT NULL DEFAULT '',
+          chain TEXT NOT NULL DEFAULT '',
+          store_type TEXT NOT NULL DEFAULT '',
+          name TEXT NOT NULL DEFAULT '',
+          city TEXT NOT NULL DEFAULT '',
+          address TEXT NOT NULL DEFAULT '',
+          gps_lat TEXT NOT NULL DEFAULT '',
+          gps_lng TEXT NOT NULL DEFAULT '',
+          phone TEXT NOT NULL DEFAULT '',
+          opening_hours JSONB NOT NULL DEFAULT '{}'::jsonb,
+          profile JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS prevadzka_devices (
+          prevadzka_id TEXT NOT NULL,
+          device_uuid TEXT NOT NULL,
+          PRIMARY KEY (prevadzka_id, device_uuid)
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS prevadzka_devices_uuid_idx
+        ON prevadzka_devices (device_uuid)
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS profile_suggestions (
+          id TEXT PRIMARY KEY,
+          prevadzka_id TEXT NOT NULL,
+          actor_id TEXT NOT NULL DEFAULT '',
+          actor_name TEXT NOT NULL DEFAULT '',
+          patch JSONB NOT NULL DEFAULT '{}'::jsonb,
+          summary TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          resolved_at TIMESTAMPTZ,
+          resolved_by TEXT NOT NULL DEFAULT ''
+        )
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS vykaz_prace (
+          id TEXT PRIMARY KEY,
+          prevadzka_id TEXT NOT NULL,
+          work_date TIMESTAMPTZ NOT NULL,
+          work_type TEXT NOT NULL,
+          author TEXT NOT NULL DEFAULT '',
+          description TEXT NOT NULL DEFAULT '',
+          duration_min INTEGER,
+          ticket_id TEXT NOT NULL DEFAULT '',
+          vyjazd_id TEXT NOT NULL DEFAULT '',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS vykaz_prace_store_date_idx
+        ON vykaz_prace (prevadzka_id, work_date DESC)
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS prevadzka_history (
+          id TEXT PRIMARY KEY,
+          prevadzka_id TEXT NOT NULL,
+          at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          author TEXT NOT NULL DEFAULT '',
+          text TEXT NOT NULL DEFAULT ''
+        )
+      `;
+      await sql`
+        ALTER TABLE prevadzky
+        ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'
+      `;
+      await sql`
+        ALTER TABLE prevadzky
+        ADD COLUMN IF NOT EXISTS job_type TEXT NOT NULL DEFAULT ''
+      `;
+      await sql`
+        ALTER TABLE tickets
+        ADD COLUMN IF NOT EXISTS prevadzka_id TEXT NOT NULL DEFAULT ''
+      `;
+      await sql`
+        ALTER TABLE tickets
+        ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT ''
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS material (
+          id TEXT PRIMARY KEY,
+          ticket_id TEXT NOT NULL DEFAULT '',
+          prevadzka_id TEXT NOT NULL DEFAULT '',
+          item TEXT NOT NULL,
+          quantity NUMERIC NOT NULL DEFAULT 1,
+          unit TEXT NOT NULL DEFAULT 'ks',
+          unit_price NUMERIC,
+          note TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'planovane',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS material_ticket_idx ON material (ticket_id)
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS material_store_idx ON material (prevadzka_id)
+      `;
       await archiveLegacyAutoTicketsOnce(sql);
       await archiveRedeployOfflineTicketsOnce(sql);
     })().catch((error) => {
@@ -355,6 +462,8 @@ function rowToTicket(row: Record<string, unknown>): Ticket {
         : String(row.archived_at)
       : undefined,
     clientRef: String(row.client_ref ?? "") || undefined,
+    prevadzkaId: String(row.prevadzka_id ?? "") || undefined,
+    kind: (String(row.kind ?? "") as Ticket["kind"]) || undefined,
   };
 }
 
@@ -387,7 +496,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         device_type, device_serial, device_uuid,
         customer_name, customer_phone, assigned_to,
         status, priority, notes, source, alert_type, archived_at, client_ref,
-        created_at, updated_at
+        prevadzka_id, kind, created_at, updated_at
       ) VALUES (
         ${ticket.id},
         ${ticket.number},
@@ -406,6 +515,8 @@ export async function dbWriteTicketStore(store: TicketStore) {
         ${ticket.alertType ?? null},
         ${ticket.archivedAt ?? null}::timestamptz,
         ${ticket.clientRef || null},
+        ${ticket.prevadzkaId || ""},
+        ${ticket.kind || ""},
         ${ticket.createdAt}::timestamptz,
         ${ticket.updatedAt}::timestamptz
       )
@@ -426,6 +537,8 @@ export async function dbWriteTicketStore(store: TicketStore) {
         alert_type = EXCLUDED.alert_type,
         archived_at = COALESCE(EXCLUDED.archived_at, tickets.archived_at),
         client_ref = EXCLUDED.client_ref,
+        prevadzka_id = EXCLUDED.prevadzka_id,
+        kind = EXCLUDED.kind,
         updated_at = EXCLUDED.updated_at
     `;
   }
