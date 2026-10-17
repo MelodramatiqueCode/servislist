@@ -1,0 +1,107 @@
+{
+  "polozky": [
+    {
+      "id": "7c6e3405-6d43-4f26-bd5f-babe663e0cb3",
+      "kod": "RP-STR65",
+      "nazov": "Reproduktory stropné",
+      "kategoria": "Reproduktory",
+      "jednotka": "ks",
+      "minStav": 10,
+      "poznamka": "",
+      "archivedAt": ""
+    },
+    {
+      "id": "6a8c8044-6462-48dd-a53f-c83aee230016",
+      "kod": "RP-BOX5",
+      "nazov": "Reproduktory nástenné",
+      "kategoria": "Reproduktory",
+      "jednotka": "ks",
+      "minStav": 4,
+      "poznamka": "",
+      "archivedAt": ""
+    },
+    {
+      "id": "1167054c-bb5e-41b0-b1ef-7b4d607502da",
+      "kod": "ZS-AMP",
+      "nazov": "Zosilňovač",
+      "kategoria": "Zosilňovače",
+      "jednotka": "ks",
+      "minStav": 2,
+      "poznamka": "",
+      "archivedAt": ""
+    },
+    {
+      "id": "de5e7602-21fe-4857-a927-5379726da1be",
+      "kod": "PI-RPI",
+      "nazov": "Raspberry Pi",
+      "kategoria": "Prehrávače/RPi",
+      "jednotka": "ks",
+      "minStav": 5,
+      "poznamka": "",
+      "archivedAt": ""
+    },
+    {
+      "id": "9e32ecd9-cdb7-4b8d-962d-429fc80a93a0",
+      "kod": "SD-CARD",
+      "nazov": "SD karta",
+      "kategoria": "SD karty",
+      "jednotka": "ks",
+      "minStav": 10,
+      "poznamka": "",
+      "archivedAt": ""
+    },
+    {
+      "id": "5bc9f7bb-f08d-4e0b-998b-d8f91dc4dbfa",
+      "kod": "PI-PSU",
+      "nazov": "Napájací zdroj",
+      "kategoria": "Prehrávače/RPi",
+      "jednotka": "ks",
+      "minStav": 5,
+      "poznamka": "",
+      "archivedAt": ""
+    },
+    {
+      "id": "6fed227a-7882-4ac0-bbee-0de6e2215e64",
+      "kod": "KB-REPRO",
+      "nazov": "Káble reproduktorové",
+      "kategoria": "Káble",
+      "jednotka": "m",
+      "minStav": 100,
+      "poznamka": "",
+      "archivedAt": ""
+    },
+    {
+      "id": "c267c9f2-10d0-46a5-82f1-68fab5f9d95e",
+      "kod": "KB-CAB",
+      "nazov": "Káble",
+      "kategoria": "Káble",
+      "jednotka": "m",
+      "minStav": 20,
+      "poznamka": "",
+      "archivedAt": ""
+    },
+    {
+      "id": "c91d0db4-b1d4-4c02-bf22-26d1fe859517",
+      "kod": "TL-BTN",
+      "nazov": "Tlačidlá",
+      "kategoria": "Tlačidlá",
+      "jednotka": "ks",
+      "minStav": 5,
+      "poznamka": "",
+      "archivedAt": ""
+    },
+    {
+      "id": "07d37b7e-bd87-4c97-92b0-e004e32dd156",
+      "kod": "DR-KONZ",
+      "nazov": "Držiaky / konzoly",
+      "kategoria": "Držiaky",
+      "jednotka": "ks",
+      "minStav": 3,
+      "poznamka": "",
+      "archivedAt": ""
+    }
+  ],
+  "listy": [],
+  "pohyby": [],
+  "files": {}
+}

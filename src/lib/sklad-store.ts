@@ -371,6 +371,18 @@ export async function addPohyb(input: {
     blob.pohyby.push(row);
     await writeBlob(blob);
   }
+  try {
+    const { writeAudit } = await import("./kontrola-store");
+    await writeAudit({
+      autor: row.kto,
+      typ: "sklad",
+      akcia: row.typ,
+      entityId: row.polozkaId,
+      popis: `${row.typ} ${row.mnozstvo > 0 ? `+${row.mnozstvo}` : row.mnozstvo}`,
+    });
+  } catch {
+    /* audit must never break a mutation */
+  }
   return row;
 }
 
@@ -471,6 +483,18 @@ export async function createDodaciList(input: {
     blob.listy.unshift(row);
     await writeBlob(blob);
   }
+  try {
+    const { writeAudit } = await import("./kontrola-store");
+    await writeAudit({
+      autor: row.vytvoril,
+      typ: "sklad",
+      akcia: "navrh",
+      entityId: row.id,
+      popis: `Príjem ${row.cisloDl || "dodací list"} · ${row.riadky.length} položiek · čaká na schválenie`,
+    });
+  } catch {
+    /* audit must never break a mutation */
+  }
   return row;
 }
 
@@ -556,6 +580,18 @@ async function setDlStav(current: DodaciList, stav: DlStav, author: string) {
     const blob = await readBlob();
     blob.listy = blob.listy.map((d) => (d.id === current.id ? next : d));
     await writeBlob(blob);
+  }
+  try {
+    const { writeAudit } = await import("./kontrola-store");
+    await writeAudit({
+      autor: author,
+      typ: "sklad",
+      akcia: stav === "schvaleny" ? "schvalil" : "zamietol",
+      entityId: current.id,
+      popis: `${stav === "schvaleny" ? "Schválený" : "Zamietnutý"} príjem ${current.cisloDl || current.id}`,
+    });
+  } catch {
+    /* audit must never break a mutation */
   }
   return next;
 }

@@ -369,6 +369,80 @@ export async function ensureSchema() {
         CREATE INDEX IF NOT EXISTS sklad_pohyby_polozka_idx
         ON sklad_pohyby (polozka_id, datum DESC)
       `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS audit_log (
+          id TEXT PRIMARY KEY,
+          at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          autor TEXT NOT NULL,
+          typ TEXT NOT NULL,
+          akcia TEXT NOT NULL DEFAULT '',
+          entity_id TEXT NOT NULL DEFAULT '',
+          popis TEXT NOT NULL DEFAULT '',
+          diff JSONB,
+          request_id TEXT NOT NULL DEFAULT ''
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS audit_log_at_idx ON audit_log (at DESC)
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS sync_runs (
+          id TEXT PRIMARY KEY,
+          started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          finished_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          ok BOOLEAN NOT NULL DEFAULT FALSE,
+          devices_online INTEGER NOT NULL DEFAULT 0,
+          devices_offline INTEGER NOT NULL DEFAULT 0,
+          devices_long_offline INTEGER NOT NULL DEFAULT 0,
+          devices_test INTEGER NOT NULL DEFAULT 0,
+          tickets_opened INTEGER NOT NULL DEFAULT 0,
+          tickets_closed INTEGER NOT NULL DEFAULT 0,
+          error TEXT NOT NULL DEFAULT ''
+        )
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS app_errors (
+          id TEXT PRIMARY KEY,
+          at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          zdroj TEXT NOT NULL,
+          route TEXT NOT NULL DEFAULT '',
+          status INTEGER NOT NULL DEFAULT 0,
+          bot TEXT NOT NULL DEFAULT '',
+          message TEXT NOT NULL DEFAULT '',
+          stack TEXT NOT NULL DEFAULT ''
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS app_errors_at_idx ON app_errors (at DESC)
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS bot_requests (
+          id TEXT PRIMARY KEY,
+          at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          bot TEXT NOT NULL DEFAULT '',
+          method TEXT NOT NULL DEFAULT '',
+          path TEXT NOT NULL DEFAULT '',
+          status INTEGER NOT NULL DEFAULT 0,
+          ms INTEGER NOT NULL DEFAULT 0
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS bot_requests_at_idx ON bot_requests (at DESC)
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS bot_navrhy (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL,
+          payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+          summary TEXT NOT NULL DEFAULT '',
+          actor_id TEXT NOT NULL DEFAULT '',
+          actor_name TEXT NOT NULL DEFAULT '',
+          stav TEXT NOT NULL DEFAULT 'cakajuci',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          resolved_at TIMESTAMPTZ,
+          resolved_by TEXT NOT NULL DEFAULT ''
+        )
+      `;
       await archiveLegacyAutoTicketsOnce(sql);
       await archiveRedeployOfflineTicketsOnce(sql);
     })().catch((error) => {

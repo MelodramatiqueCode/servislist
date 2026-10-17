@@ -218,6 +218,32 @@ export async function botCreateTicket(
   }
 
   const extraNote = String(body.note ?? body.poznamka ?? "").trim();
+  const { wantsPendingNavrh } = await import("./kontrola");
+  if (wantsPendingNavrh(body)) {
+    const { createNavrh } = await import("./kontrola-store");
+    const navrh = await createNavrh({
+      kind: "ticket",
+      payload: {
+        title: fields.title,
+        description: fields.description,
+        deviceType: fields.deviceType,
+        deviceSerial: fields.deviceSerial,
+        deviceUuid: fields.deviceUuid,
+        customerName: fields.customerName,
+        customerPhone: fields.customerPhone,
+        assignedTo: fields.assignedTo,
+        priority: fields.priority,
+        clientRef,
+        note: extraNote,
+      },
+      summary: `Návrh ticketu: ${fields.customerName || fields.title}`,
+      actorId: actor.id,
+      actorName: actor.name,
+    });
+    safeRevalidate("/");
+    safeRevalidate("/kontrola");
+    return { pending: true, created: false, navrh };
+  }
   const ticket = await createTicket(
     {
       title: fields.title!,
@@ -443,6 +469,50 @@ export async function botListVyjazdy(url: URL) {
     count: vyjazdy.length,
     vyjazdy: vyjazdy.map(serializeVyjazd),
   };
+}
+
+export async function botProposeVyjazd(raw: unknown, actor: BotActor) {
+  const body = asRecord(raw);
+  const title = String(body.title ?? body.nazov ?? "").trim();
+  const store = String(body.store ?? body.prevadzka ?? "").trim();
+  if (!title && !store) {
+    throw new ApiError(
+      400,
+      "validation_error",
+      "Zadaj názov výjazdu alebo prevádzku.",
+      { title: "Chýba názov alebo prevádzka." },
+    );
+  }
+  const { createNavrh } = await import("./kontrola-store");
+  const navrh = await createNavrh({
+    kind: "vyjazd",
+    payload: {
+      title: title || `Výjazd ${store}`,
+      store,
+      address: String(body.address ?? body.adresa ?? ""),
+      contactPhone: String(body.contactPhone ?? body.telefon ?? ""),
+      technician: String(body.technician ?? body.technik ?? ""),
+      scheduledAt: String(body.scheduledAt ?? body.datum ?? ""),
+      ticketId: String(body.ticketId ?? body.ticket ?? ""),
+      deviceUuid: String(body.deviceUuid ?? body.device ?? ""),
+      description: String(body.description ?? body.popis ?? ""),
+      stops: body.stops,
+    },
+    summary: `Návrh výjazdu: ${title || store}`,
+    actorId: actor.id,
+    actorName: actor.name,
+  });
+  safeRevalidate("/");
+  safeRevalidate("/kontrola");
+  safeRevalidate("/vyjazdy");
+  return { pending: true, navrh };
+}
+
+export async function botCreateNavrh(raw: unknown, actor: BotActor) {
+  const body = asRecord(raw);
+  const kind = String(body.kind ?? body.typ ?? "ticket");
+  if (kind === "vyjazd") return botProposeVyjazd(body, actor);
+  return botCreateTicket({ ...body, pending: true }, actor);
 }
 
 export async function botGetVyjazd(ref: string) {

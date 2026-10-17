@@ -54,6 +54,13 @@ export const SEARCH_COMMANDS: SearchHit[] = [
     title: "Nová položka",
     hint: "nová položka · katalóg",
   },
+  {
+    kind: "command",
+    id: "cmd-kontrola",
+    href: "/kontrola",
+    title: "Kontrola",
+    hint: "kontrola · schválenie · audit",
+  },
 ];
 
 function score(hay: string, q: string) {
