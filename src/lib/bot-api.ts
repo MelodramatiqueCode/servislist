@@ -900,7 +900,7 @@ export async function botSkladPrijem(
   file?: { name: string; mime: string; bytes: Buffer },
 ) {
   const { createDodaciList } = await import("./sklad-store");
-  const { parseKategoria, parseJednotka } = await import("./sklad");
+  const { parseKategoria, parseJednotka, toSqlTimestamptz } = await import("./sklad");
   const body = asRecord(raw);
   const itemsRaw = body.polozky ?? body.items ?? body.riadky;
   if (!Array.isArray(itemsRaw) || itemsRaw.length === 0) {
@@ -911,7 +911,7 @@ export async function botSkladPrijem(
   const list = await createDodaciList({
     dodavatel: String(body.dodavatel ?? ""),
     cisloDl: String(body.cisloDl ?? body.cislo_dl ?? ""),
-    datum: String(body.datum ?? body.date ?? "") || new Date().toISOString(),
+    datum: toSqlTimestamptz(body.datum ?? body.date),
     zdroj: "servis_bot",
     vytvoril: actor.name,
     riadky: itemsRaw.map((row) => {

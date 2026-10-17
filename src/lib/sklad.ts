@@ -140,4 +140,30 @@ export function isLowStock(stock: number, reserved: number, minStav: number) {
   return stock - reserved < minStav;
 }
 
+/**
+ * Neon returns TIMESTAMPTZ as Date. String(date) is
+ * "Wed Oct 14 2026 00:00:00 GMT+0000 (Coordinated Universal Time)",
+ * which Postgres rejects as timestamptz. Always write ISO-8601.
+ */
+export function toSqlTimestamptz(value: unknown, fallback?: unknown): string {
+  return parseToDate(value)?.toISOString()
+    ?? parseToDate(fallback)?.toISOString()
+    ?? new Date().toISOString();
+}
+
+export function parseToDate(value: unknown): Date | null {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export const DL_FILE_MAX_BYTES = 4 * 1024 * 1024;

@@ -8,6 +8,7 @@ import {
   normalizeName,
   reservedQty,
   stockFromPohyby,
+  toSqlTimestamptz,
   type SkladPohyb,
 } from "../src/lib/sklad";
 import type * as SkladStore from "../src/lib/sklad-store";
@@ -79,6 +80,21 @@ describe("sklad helpers", () => {
     assert.equal(isLowStock(10, 6, 5), true);
     assert.equal(isLowStock(10, 2, 5), false);
     assert.equal(normalizeName("SD  karta"), "sd karta");
+  });
+
+  test("toSqlTimestamptz rejects JS Date.toString() as SQL input", () => {
+    const neonDate = new Date("2026-10-14T00:00:00.000Z");
+    const leaked = String(neonDate);
+    assert.equal(
+      leaked,
+      "Wed Oct 14 2026 00:00:00 GMT+0000 (Coordinated Universal Time)",
+    );
+    assert.equal(toSqlTimestamptz(neonDate), "2026-10-14T00:00:00.000Z");
+    assert.equal(toSqlTimestamptz(leaked), "2026-10-14T00:00:00.000Z");
+    assert.equal(
+      toSqlTimestamptz("", "2026-10-14T00:00:00.000Z"),
+      "2026-10-14T00:00:00.000Z",
+    );
   });
 });
 
@@ -228,5 +244,84 @@ describe("sklad store", () => {
     const snap = await sklad.skladSnapshot();
     assert.equal(snap.polozky.find((p) => p.id === sd.id)?.reserved, 3);
     assert.equal(snap.polozky.find((p) => p.id === sd.id)?.free, 7);
+  });
+
+  test("JS Date.toString() datum is normalized to ISO and approve stays atomic", async () => {
+    const catalog = await sklad.listPolozky();
+    const sd = catalog.find((p) => p.kod === "SD-CARD");
+    const amp = catalog.find((p) => p.kod === "ZS-AMP");
+    assert.ok(sd);
+    assert.ok(amp);
+
+    const bad = String(new Date("2026-10-14T00:00:00.000Z"));
+    assert.match(bad, /Wed Oct 14 2026 00:00:00 GMT\+0000/);
+    assert.equal(toSqlTimestamptz(bad), "2026-10-14T00:00:00.000Z");
+    assert.equal(
+      toSqlTimestamptz(new Date("2026-10-14T00:00:00.000Z")),
+      "2026-10-14T00:00:00.000Z",
+    );
+    assert.equal(toSqlTimestamptz("2026-10-14"), "2026-10-14T00:00:00.000Z");
+
+    const before = await sklad.skladSnapshot();
+    const stockSd = before.polozky.find((p) => p.id === sd.id)?.stock ?? 0;
+    const stockAmp = before.polozky.find((p) => p.id === amp.id)?.stock ?? 0;
+
+    const dl = await sklad.createDodaciList({
+      dodavatel: "AudioTech",
+      cisloDl: "DL-DATE-BUG",
+      datum: bad,
+      vytvoril: "Servis bot",
+      zdroj: "servis_bot",
+      riadky: [
+        {
+          polozkaId: sd.id,
+          kod: sd.kod,
+          nazov: sd.nazov,
+          kategoria: sd.kategoria,
+          jednotka: sd.jednotka,
+          minStav: sd.minStav,
+          mnozstvo: 4,
+          poznamka: "",
+          nova: false,
+        },
+        {
+          polozkaId: amp.id,
+          kod: amp.kod,
+          nazov: amp.nazov,
+          kategoria: amp.kategoria,
+          jednotka: amp.jednotka,
+          minStav: amp.minStav,
+          mnozstvo: 1,
+          poznamka: "",
+          nova: false,
+        },
+      ],
+    });
+    assert.equal(dl.stav, "cakajuci");
+    assert.equal(dl.datum, "2026-10-14T00:00:00.000Z");
+
+    const reread = await sklad.getDodaciList(dl.id);
+    assert.equal(reread?.datum, "2026-10-14T00:00:00.000Z");
+
+    const approved = await sklad.resolveDodaciList(dl.id, "accepted", "Martin");
+    assert.equal(approved?.stav, "schvaleny");
+    assert.equal(approved?.datum, "2026-10-14T00:00:00.000Z");
+
+    const after = await sklad.skladSnapshot();
+    assert.equal(after.polozky.find((p) => p.id === sd.id)?.stock, stockSd + 4);
+    assert.equal(after.polozky.find((p) => p.id === amp.id)?.stock, stockAmp + 1);
+    assert.equal(after.pending.some((p) => p.id === dl.id), false);
+    const prijmy = after.pohyby.filter((p) => p.dodaciListId === dl.id);
+    assert.equal(prijmy.length, 2);
+    assert.ok(prijmy.every((p) => p.datum === "2026-10-14T00:00:00.000Z"));
+
+    const again = await sklad.resolveDodaciList(dl.id, "accepted", "Martin");
+    assert.equal(again?.stav, "schvaleny");
+    const afterAgain = await sklad.skladSnapshot();
+    assert.equal(
+      afterAgain.pohyby.filter((p) => p.dodaciListId === dl.id).length,
+      2,
+    );
+    assert.equal(afterAgain.polozky.find((p) => p.id === sd.id)?.stock, stockSd + 4);
   });
 });

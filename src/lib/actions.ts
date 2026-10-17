@@ -547,7 +547,7 @@ export async function createPolozkaAction(formData: FormData) {
 
 export async function createPrijemAction(formData: FormData) {
   const { createDodaciList } = await import("./sklad-store");
-  const { parseKategoria, parseJednotka } = await import("./sklad");
+  const { parseKategoria, parseJednotka, toSqlTimestamptz } = await import("./sklad");
   let riadky: Array<Record<string, unknown>> = [];
   try {
     const parsed = JSON.parse(str(formData, "riadkyJson") || "[]");
@@ -567,7 +567,7 @@ export async function createPrijemAction(formData: FormData) {
   await createDodaciList({
     dodavatel: str(formData, "dodavatel"),
     cisloDl: str(formData, "cisloDl"),
-    datum: str(formData, "datum") || new Date().toISOString(),
+    datum: toSqlTimestamptz(str(formData, "datum")),
     vytvoril: str(formData, "vytvoril") || "Martin",
     zdroj: "web",
     riadky: riadky.map((row) => ({

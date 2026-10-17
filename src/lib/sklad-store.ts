@@ -13,6 +13,7 @@ import {
   parsePohybTyp,
   reservedQty,
   stockFromPohyby,
+  toSqlTimestamptz,
   type DlStav,
   type DodaciList,
   type DodaciListRiadok,
@@ -82,11 +83,9 @@ function hydratePolozka(raw: Record<string, unknown>): SkladPolozka {
     jednotka: parseJednotka(String(raw.jednotka ?? "ks")),
     minStav: Number(raw.min_stav ?? raw.minStav ?? 0) || 0,
     poznamka: String(raw.poznamka ?? raw.note ?? ""),
-    archivedAt: raw.archived_at
-      ? raw.archived_at instanceof Date
-        ? raw.archived_at.toISOString()
-        : String(raw.archived_at)
-      : String(raw.archivedAt ?? ""),
+    archivedAt: raw.archived_at || raw.archivedAt
+      ? toSqlTimestamptz(raw.archived_at ?? raw.archivedAt)
+      : "",
   };
 }
 
@@ -109,7 +108,7 @@ function hydrateDl(raw: Record<string, unknown>): DodaciList {
     id: String(raw.id ?? ""),
     dodavatel: String(raw.dodavatel ?? ""),
     cisloDl: String(raw.cislo_dl ?? raw.cisloDl ?? ""),
-    datum: String(raw.datum ?? raw.date ?? ""),
+    datum: toSqlTimestamptz(raw.datum ?? raw.date, raw.created_at ?? raw.createdAt),
     suborUrl: String(raw.subor_url ?? raw.suborUrl ?? ""),
     suborName: String(raw.subor_name ?? raw.suborName ?? ""),
     suborMime: String(raw.subor_mime ?? raw.suborMime ?? ""),
@@ -117,12 +116,12 @@ function hydrateDl(raw: Record<string, unknown>): DodaciList {
     zdroj: String(raw.zdroj ?? "web") === "servis_bot" ? "servis_bot" : "web",
     vytvoril: String(raw.vytvoril ?? ""),
     schvalil: String(raw.schvalil ?? ""),
-    schvaleneAt: String(raw.schvalene_at ?? raw.schvaleneAt ?? ""),
+    schvaleneAt:
+      raw.schvalene_at || raw.schvaleneAt
+        ? toSqlTimestamptz(raw.schvalene_at ?? raw.schvaleneAt)
+        : "",
     riadky,
-    createdAt:
-      raw.created_at instanceof Date
-        ? raw.created_at.toISOString()
-        : String(raw.created_at ?? raw.createdAt ?? nowIso()),
+    createdAt: toSqlTimestamptz(raw.created_at ?? raw.createdAt),
   };
 }
 
@@ -136,10 +135,7 @@ function hydratePohyb(raw: Record<string, unknown>): SkladPohyb {
     ticketId: String(raw.ticket_id ?? raw.ticketId ?? ""),
     prevadzkaId: String(raw.prevadzka_id ?? raw.prevadzkaId ?? ""),
     ticketMaterialId: String(raw.ticket_material_id ?? raw.ticketMaterialId ?? ""),
-    datum:
-      raw.datum instanceof Date
-        ? raw.datum.toISOString()
-        : String(raw.datum ?? nowIso()),
+    datum: toSqlTimestamptz(raw.datum),
     kto: String(raw.kto ?? ""),
   };
 }
@@ -339,7 +335,7 @@ export async function addPohyb(input: {
     ticketId: input.ticketId ?? "",
     prevadzkaId: input.prevadzkaId ?? "",
     ticketMaterialId: input.ticketMaterialId ?? "",
-    datum: input.datum || nowIso(),
+    datum: toSqlTimestamptz(input.datum),
     kto: input.kto?.trim() || "Servis",
   };
   if (isDatabaseConfigured()) {
@@ -452,7 +448,7 @@ export async function createDodaciList(input: {
     id,
     dodavatel: input.dodavatel.trim(),
     cisloDl: input.cisloDl.trim(),
-    datum: input.datum || nowIso(),
+    datum: toSqlTimestamptz(input.datum),
     suborUrl,
     suborName,
     suborMime,
@@ -601,28 +597,117 @@ export async function resolveDodaciList(
   if (action === "rejected") {
     return setDlStav(current, "zamietnuty", author);
   }
+  return approveDodaciListAtomic(current, author);
+}
+
+async function approveDodaciListAtomic(current: DodaciList, author: string) {
+  const datum = toSqlTimestamptz(current.datum, current.createdAt);
+  const schvaleneAt = nowIso();
+  const next: DodaciList = {
+    ...current,
+    datum,
+    stav: "schvaleny",
+    schvalil: author,
+    schvaleneAt,
+  };
+
+  const newItems: SkladPolozka[] = [];
+  const movements: SkladPohyb[] = [];
   for (const line of current.riadky) {
     let polozkaId = line.polozkaId;
     if (!polozkaId || line.nova) {
-      const created = await createPolozka({
-        kod: line.kod || line.nazov.slice(0, 12),
-        nazov: line.nazov,
+      const created: SkladPolozka = {
+        id: randomUUID(),
+        kod: (line.kod || line.nazov.slice(0, 12)).trim().toUpperCase(),
+        nazov: line.nazov.trim(),
         kategoria: line.kategoria,
         jednotka: line.jednotka,
-        minStav: line.minStav,
-      });
+        minStav: Number(line.minStav ?? 0) || 0,
+        poznamka: "",
+        archivedAt: "",
+      };
+      newItems.push(created);
       polozkaId = created.id;
     }
-    await addPohyb({
+    movements.push({
+      id: randomUUID(),
       polozkaId,
       typ: "prijem",
-      mnozstvo: line.mnozstvo,
+      mnozstvo: Math.abs(line.mnozstvo),
       dodaciListId: current.id,
+      ticketId: "",
+      prevadzkaId: "",
+      ticketMaterialId: "",
+      datum,
       kto: author,
-      datum: current.datum,
     });
   }
-  return setDlStav(current, "schvaleny", author);
+
+  if (isDatabaseConfigured()) {
+    await ensureSchema();
+    const sql = getSql();
+    await sql.transaction((txn) => [
+      ...newItems.map(
+        (row) => txn`
+          INSERT INTO sklad_polozky (
+            id, kod, nazov, kategoria, jednotka, min_stav, poznamka, archived_at
+          ) VALUES (
+            ${row.id}, ${row.kod}, ${row.nazov}, ${row.kategoria}, ${row.jednotka},
+            ${row.minStav}, ${row.poznamka}, NULL
+          )
+        `,
+      ),
+      ...movements.map(
+        (row) => txn`
+          INSERT INTO sklad_pohyby (
+            id, polozka_id, typ, mnozstvo, dodaci_list_id, ticket_id,
+            prevadzka_id, ticket_material_id, datum, kto
+          ) VALUES (
+            ${row.id}, ${row.polozkaId}, ${row.typ}, ${row.mnozstvo},
+            ${row.dodaciListId || null}, ${row.ticketId || null},
+            ${row.prevadzkaId || null}, ${row.ticketMaterialId || null},
+            ${row.datum}::timestamptz, ${row.kto}
+          )
+        `,
+      ),
+      txn`
+        UPDATE dodacie_listy SET
+          stav = ${next.stav},
+          schvalil = ${next.schvalil},
+          schvalene_at = ${next.schvaleneAt}::timestamptz
+        WHERE id = ${current.id} AND stav = 'cakajuci'
+      `,
+    ]);
+  } else {
+    const blob = await readBlob();
+    blob.polozky.push(...newItems);
+    blob.pohyby.push(...movements);
+    blob.listy = blob.listy.map((d) => (d.id === current.id ? next : d));
+    await writeBlob(blob);
+  }
+
+  try {
+    const { writeAudit } = await import("./kontrola-store");
+    for (const row of movements) {
+      await writeAudit({
+        autor: row.kto,
+        typ: "sklad",
+        akcia: row.typ,
+        entityId: row.polozkaId,
+        popis: `${row.typ} ${row.mnozstvo > 0 ? `+${row.mnozstvo}` : row.mnozstvo}`,
+      });
+    }
+    await writeAudit({
+      autor: author,
+      typ: "sklad",
+      akcia: "schvalil",
+      entityId: current.id,
+      popis: `Schválený príjem ${current.cisloDl || current.id}`,
+    });
+  } catch {
+    /* audit must never break a mutation */
+  }
+  return next;
 }
 
 async function setDlStav(current: DodaciList, stav: DlStav, author: string) {
