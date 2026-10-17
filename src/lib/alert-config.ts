@@ -11,6 +11,10 @@ export type AlertConfig = {
   autoTickets: boolean;
   autoClose: boolean;
   offlineGraceMinutes: number;
+  /** Continuous offline from Balena `last_connectivity_event` before an Offline auto-ticket. */
+  offlineThresholdHours: number;
+  /** Monday local hour that ends the weekend hold (Europe/Bratislava). */
+  weekendHoldMondayHour: number;
   massWindowMinutes: number;
   massMinDevices: number;
   hotOpenC: number;
@@ -30,6 +34,11 @@ export type AlertConfig = {
 
 const DEFAULT_HOURS = "07:00-21:00";
 const DEFAULT_TZ = "Europe/Bratislava";
+
+/** Offline auto-ticket only after this many continuous hours (Balena last seen). */
+export const ALERT_OFFLINE_THRESHOLD_HOURS = 12;
+/** No weekend-offline auto-ticket before this Monday hour in `storeTimezone`. */
+export const ALERT_WEEKEND_HOLD_MONDAY_HOUR = 7;
 
 export function parseEnvFlag(value: string | undefined, fallback: boolean) {
   if (value === undefined || value === "") return fallback;
@@ -106,6 +115,8 @@ export function defaultAlertConfig(): AlertConfig {
     autoTickets: true,
     autoClose: true,
     offlineGraceMinutes: 15,
+    offlineThresholdHours: ALERT_OFFLINE_THRESHOLD_HOURS,
+    weekendHoldMondayHour: ALERT_WEEKEND_HOLD_MONDAY_HOUR,
     massWindowMinutes: 10,
     massMinDevices: 15,
     hotOpenC: 82,
@@ -135,6 +146,16 @@ export function loadAlertConfig(env: NodeJS.ProcessEnv = process.env): AlertConf
       min: 0,
       max: 24 * 60,
     }),
+    offlineThresholdHours: parseEnvInt(
+      env.ALERT_OFFLINE_THRESHOLD_HOURS,
+      ALERT_OFFLINE_THRESHOLD_HOURS,
+      { min: 1, max: 24 * 7 },
+    ),
+    weekendHoldMondayHour: parseEnvInt(
+      env.ALERT_WEEKEND_HOLD_MONDAY_HOUR,
+      ALERT_WEEKEND_HOLD_MONDAY_HOUR,
+      { min: 0, max: 23 },
+    ),
     massWindowMinutes: parseEnvInt(env.ALERT_MASS_WINDOW_MINUTES, 10, {
       min: 1,
       max: 24 * 60,

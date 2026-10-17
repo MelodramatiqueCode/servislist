@@ -1,5 +1,6 @@
 import type { AlertConfig } from "./alert-config";
 import { isWithinStoreHours } from "./alert-hours";
+import { offlineConfirmBlocked } from "./alert-offline";
 import type { AlertType } from "./alerts";
 import type { AlertPending, DeviceEvent, ServiceDevice } from "./types";
 
@@ -10,7 +11,12 @@ export type PolicyContext = {
   hasOpenHotTicket: boolean;
 };
 
-export type ConfirmKind = "immediate" | "grace" | "hot" | "mass_candidate";
+export type ConfirmKind =
+  | "immediate"
+  | "grace"
+  | "hot"
+  | "mass_candidate"
+  | "weekend_hold";
 
 export function minutesBetween(fromIso: string, to: Date) {
   const start = new Date(fromIso).getTime();
@@ -81,15 +87,20 @@ export function canConfirmAlert(
     return { confirm: false, kind: "wait" };
   }
 
-  // offline
+  // offline: 12 h from Balena last_connectivity_event + weekend hold
+  const blocked = offlineConfirmBlocked(
+    device,
+    ctx.now,
+    ctx.config,
+    ctx.pending?.firstSeenAt,
+  );
+  if (blocked === "weekend_hold") {
+    return { confirm: false, kind: "weekend_hold" };
+  }
+  if (blocked) return { confirm: false, kind: "wait" };
   const inHours = isWithinStoreHours(ctx.now, device, ctx.config);
   if (!inHours) return { confirm: false, kind: "outside_hours" };
-  const since = ctx.pending?.inHoursSince ?? ctx.pending?.firstSeenAt;
-  if (!since) return { confirm: false, kind: "wait" };
-  if (minutesBetween(since, ctx.now) >= ctx.config.offlineGraceMinutes) {
-    return { confirm: true, kind: "grace" };
-  }
-  return { confirm: false, kind: "wait" };
+  return { confirm: true, kind: "grace" };
 }
 
 export function eventDurationSeconds(startedAt: string, endedAt: string) {

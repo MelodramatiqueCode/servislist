@@ -40,7 +40,8 @@ npm run dev
 | `BALENA_FLEET_SLUG` | napr. `ceo2/massiva` |
 | `ALERT_AUTO_TICKETS` | `1` / `0` |
 | `ALERT_AUTO_CLOSE` | `1` / `0` |
-| `ALERT_OFFLINE_GRACE_MINUTES` | offline ticket až po N min (predvolene 15) |
+| `ALERT_OFFLINE_THRESHOLD_HOURS` | offline ticket až po N hodinách (predvolene 12) |
+| `ALERT_WEEKEND_HOLD_MONDAY_HOUR` | víkendový hold do tohto pondelňajšieho času (predvolene 7) |
 | `ALERT_MASS_MIN_DEVICES` | hromadný výpadok namiesto N ticketov |
 | `ALERT_HOT_OPEN_C` / `ALERT_HOT_CLOSE_C` | hysterézia Horúce CPU |
 | `ALERT_STORE_HOURS` | otváracie hodiny (predvolene `07:00-21:00`) |

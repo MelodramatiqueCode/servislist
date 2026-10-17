@@ -161,9 +161,12 @@ describe("dlhodobo offline", () => {
       isOnline: false,
       lastConnectivityEvent: "2026-10-05T10:00:00.000Z",
     });
-    const { second } = offlineTwice(dev);
-    assert.equal(second.created, 0);
-    assert.equal(second.events.some((e) => e.outcome === "long_offline"), true);
+    const { first, second } = offlineTwice(dev);
+    assert.equal(first.created + second.created, 0);
+    assert.equal(
+      [...first.events, ...second.events].some((e) => e.outcome === "long_offline"),
+      true,
+    );
   });
 
   test("offline 2 dni normálne vytvorí ticket", () => {
@@ -172,8 +175,8 @@ describe("dlhodobo offline", () => {
       isOnline: false,
       lastConnectivityEvent: "2026-10-17T10:00:00.000Z",
     });
-    const { second } = offlineTwice(dev);
-    assert.equal(second.created, 1);
+    const { first, second } = offlineTwice(dev);
+    assert.equal(first.created + second.created, 1);
   });
 });
 
@@ -188,9 +191,9 @@ describe("archivované auto tickety", () => {
       nextNumber: 2,
       tickets: [archivedOffline("a1", "2026-10-16T11:40:00.000Z")],
     };
-    const { second } = offlineTwice(dev, tickets);
-    assert.equal(second.created, 0);
-    const ev = second.events.find((e) => e.deviceUuid === "a1");
+    const { first, second } = offlineTwice(dev, tickets);
+    assert.equal(first.created + second.created, 0);
+    const ev = [...first.events, ...second.events].find((e) => e.deviceUuid === "a1");
     assert.equal(ev?.outcome, "archived");
     assert.equal(ev?.ticketId, "old-a1");
   });
@@ -200,13 +203,13 @@ describe("archivované auto tickety", () => {
       uuid: "a2",
       isOnline: false,
       // zariadenie bolo po archivovanom tickete znova online a padlo neskôr
-      lastConnectivityEvent: "2026-10-19T07:59:00.000Z",
+      lastConnectivityEvent: "2026-10-18T19:00:00.000Z",
     });
     const tickets = {
       nextNumber: 2,
       tickets: [archivedOffline("a2", "2026-10-16T11:40:00.000Z")],
     };
-    const { second } = offlineTwice(dev, tickets);
-    assert.equal(second.created, 1);
+    const { first, second } = offlineTwice(dev, tickets);
+    assert.equal(first.created + second.created, 1);
   });
 });
