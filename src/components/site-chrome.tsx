@@ -22,8 +22,9 @@ export function SiteHeader({ pendingCount = 0 }: { pendingCount?: number }) {
   return (
     <header className="site-header">
       <div className="shell">
-        <Link href="/" className="brand">
-          <i>▶</i>Servis<span>List</span>
+        <Link href="/" className="brand" aria-label="ServisList">
+          <img src="/brand-icon.svg" alt="" width={28} height={28} />
+          Servis<span>List</span>
         </Link>
         <nav className="top-nav">
           {NAV.map((item) => (
