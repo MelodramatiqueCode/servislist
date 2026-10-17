@@ -2,8 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { korekciaAction } from "@/lib/actions";
 import { formatDate, ticketCode } from "@/lib/format";
+import { DlFileLink } from "@/components/dl-file-link";
 import {
   getPolozka,
+  listDodacieListy,
   listPohyby,
   reservedForOpenTickets,
   skladSnapshot,
@@ -19,11 +21,13 @@ export default async function SkladPolozkaPage({
   const { id } = await params;
   const item = await getPolozka(id);
   if (!item) notFound();
-  const [pohyby, reserved, snap] = await Promise.all([
+  const [pohyby, reserved, snap, listy] = await Promise.all([
     listPohyby({ polozkaId: id }),
     reservedForOpenTickets(),
     skladSnapshot(),
+    listDodacieListy(),
   ]);
+  const dlById = new Map(listy.map((d) => [d.id, d]));
   const row = snap.polozky.find((p) => p.id === id);
   const stock = row?.stock ?? 0;
   const reservedN = row?.reserved ?? 0;
@@ -118,7 +122,14 @@ export default async function SkladPolozkaPage({
                     {p.ticketId ? (
                       <Link href={`/ticket/${p.ticketId}`}>Ticket</Link>
                     ) : p.dodaciListId ? (
-                      "DL"
+                      dlById.get(p.dodaciListId)?.suborUrl ? (
+                        <DlFileLink
+                          url={dlById.get(p.dodaciListId)?.suborUrl}
+                          name={dlById.get(p.dodaciListId)?.suborName || "DL"}
+                        />
+                      ) : (
+                        "DL"
+                      )
                     ) : (
                       "—"
                     )}

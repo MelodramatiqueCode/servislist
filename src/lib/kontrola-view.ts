@@ -37,6 +37,8 @@ export type ApprovalItem = {
   suggestionId?: string;
   dlId?: string;
   navrhId?: string;
+  suborUrl?: string;
+  suborName?: string;
 };
 
 export async function kontrolaSnapshot() {
@@ -121,6 +123,8 @@ export async function kontrolaSnapshot() {
       createdAt: dl.createdAt,
       stale: minutesAgo(dl.createdAt, now) > 24 * 60,
       dlId: dl.id,
+      suborUrl: dl.suborUrl || undefined,
+      suborName: dl.suborName || undefined,
     })),
     ...navrhy.map((n) => ({
       id: `navrh-${n.id}`,

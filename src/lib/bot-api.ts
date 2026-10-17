@@ -875,7 +875,30 @@ export async function botSkladPohyby(url: URL) {
   return { count: pohyby.length, pohyby: pohyby.map(serializePohyb) };
 }
 
-export async function botSkladPrijem(raw: unknown, actor: BotActor) {
+async function serializePrijemResponse(list: {
+  id: string;
+  suborUrl: string;
+  suborName: string;
+  suborMime: string;
+}) {
+  const { serializeDl } = await import("./sklad-store");
+  const prijem = serializeDl(list as Parameters<typeof serializeDl>[0]);
+  const subor = list.suborUrl
+    ? {
+        id: list.id,
+        url: list.suborUrl,
+        nazov: list.suborName,
+        mime: list.suborMime,
+      }
+    : null;
+  return { pending: true as const, prijem, subor };
+}
+
+export async function botSkladPrijem(
+  raw: unknown,
+  actor: BotActor,
+  file?: { name: string; mime: string; bytes: Buffer },
+) {
   const { createDodaciList } = await import("./sklad-store");
   const { parseKategoria, parseJednotka } = await import("./sklad");
   const body = asRecord(raw);
@@ -908,9 +931,51 @@ export async function botSkladPrijem(raw: unknown, actor: BotActor) {
         nova: Boolean(o.nova ?? o.new),
       };
     }),
+    file,
   });
   safeRevalidate("/");
   safeRevalidate("/sklad");
-  const { serializeDl } = await import("./sklad-store");
-  return { pending: true, prijem: serializeDl(list) };
+  safeRevalidate("/kontrola");
+  return serializePrijemResponse(list);
+}
+
+export async function botSkladPrijemSubor(
+  id: string,
+  file: { name: string; mime: string; bytes: Buffer },
+  actor: BotActor,
+) {
+  const { attachDodaciListFile, getDodaciList } = await import("./sklad-store");
+  const current = await getDodaciList(id);
+  if (!current) {
+    throw new ApiError(404, "not_found", "Príjem sa nenašiel.");
+  }
+  if (current.zdroj !== "servis_bot" || current.vytvoril !== actor.name) {
+    throw new ApiError(
+      403,
+      "forbidden",
+      "Prílohu môže pridať len bot, ktorý príjem vytvoril.",
+    );
+  }
+  const result = await attachDodaciListFile(id, file);
+  if (!result.ok) {
+    if (result.reason === "not_found") {
+      throw new ApiError(404, "not_found", "Príjem sa nenašiel.");
+    }
+    if (result.reason === "not_pending") {
+      throw new ApiError(
+        400,
+        "validation_error",
+        "Prílohu možno pridať len k čakajúcemu príjmu.",
+      );
+    }
+    throw new ApiError(
+      409,
+      "conflict",
+      "Príjem už má prílohu. Súbor sa nemaže ani neprepisuje.",
+    );
+  }
+  safeRevalidate("/");
+  safeRevalidate("/sklad");
+  safeRevalidate("/kontrola");
+  return serializePrijemResponse(result.list);
 }

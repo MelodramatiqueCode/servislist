@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DlFileLink } from "@/components/dl-file-link";
 import {
   confirmPrevadzkaAction,
   resolveDlAction,
@@ -74,6 +75,13 @@ export function ApprovalsPanel({
                     ? storeLabel(storeById.get(item.storeId)!)
                     : item.hint
                   : item.hint}
+                {item.kind === "prijem" ? (
+                  <DlFileLink
+                    url={prijmy.find((d) => d.id === item.dlId)?.suborUrl}
+                    name={prijmy.find((d) => d.id === item.dlId)?.suborName}
+                    className="ml-1 font-semibold underline underline-offset-2"
+                  />
+                ) : null}
               </small>
             </Link>
             {item.kind === "store" ? (
