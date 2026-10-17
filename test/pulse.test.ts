@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 import {
   outageCountsByDay,
@@ -92,6 +93,16 @@ describe("command search", () => {
         (h) => h.href === "/kontrola",
       ),
     );
+  });
+
+  test("ticket card QA links stay server-safe without onClick", () => {
+    const src = readFileSync(
+      new URL("../src/components/ticket-card.tsx", import.meta.url),
+      "utf8",
+    );
+    assert.match(src, /tel:\$\{phone\}/);
+    assert.match(src, /target="_blank"/);
+    assert.doesNotMatch(src, /onClick/);
   });
 
   test("catalog finds tickets by code and store name", () => {
