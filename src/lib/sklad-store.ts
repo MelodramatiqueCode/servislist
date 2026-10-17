@@ -18,7 +18,6 @@ import {
   type DodaciList,
   type DodaciListRiadok,
   type PohybTyp,
-  type SkladJednotka,
   type SkladKategoria,
   type SkladPohyb,
   type SkladPolozka,
