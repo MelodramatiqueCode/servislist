@@ -2,6 +2,11 @@ import { randomUUID } from "crypto";
 import type { AlertConfig } from "./alert-config";
 import { isWithinStoreHours } from "./alert-hours";
 import {
+  isInWeekendOfflineWindow,
+  isWeekendHoldActive,
+  deviceLastSeen,
+} from "./alert-offline";
+import {
   canConfirmAlert,
   countFlapEvents,
   eventDurationSeconds,
@@ -389,6 +394,18 @@ export function reconcileAlerts(input: ReconcileInput): ReconcileResult {
     if (ignoredUuids.has(device.uuid) || longOfflineUuids.has(device.uuid)) {
       return false;
     }
+    const lastSeen = deviceLastSeen(device, pending?.firstSeenAt);
+    if (
+      lastSeen &&
+      isWeekendHoldActive(
+        lastSeen,
+        now,
+        config.storeTimezone,
+        config.weekendHoldMondayHour,
+      )
+    ) {
+      return false;
+    }
     const pendingEvent = pending ? getEvent(pending.eventId) : undefined;
     if (
       pendingEvent?.outcome === "archived" ||
@@ -499,6 +516,15 @@ export function reconcileAlerts(input: ReconcileInput): ReconcileResult {
   for (const device of current) {
     if (!newlyShort.has(device.uuid)) continue;
     if (ignoredUuids.has(device.uuid)) continue;
+    if (
+      isInWeekendOfflineWindow(
+        now,
+        config.storeTimezone,
+        config.weekendHoldMondayHour,
+      )
+    ) {
+      continue;
+    }
     const count = countFlapEvents(
       recentEvents,
       device.uuid,

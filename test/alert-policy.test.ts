@@ -76,8 +76,14 @@ function mergeEvents(...lists: DeviceEvent[][]) {
 const monday10 = new Date("2026-09-14T08:00:00.000Z"); // 10:00 Bratislava (CEST)
 
 describe("alert reconcile", () => {
-  test("offline kratší ako grace nevytvorí ticket", () => {
-    const d = device({ uuid: "u1", isOnline: false, code: "1" });
+  test("offline kratší ako 12 h nevytvorí ticket", () => {
+    const lastSeen = new Date(monday10.getTime() - 3 * 60 * 60_000).toISOString();
+    const d = device({
+      uuid: "u1",
+      isOnline: false,
+      code: "1",
+      lastConnectivityEvent: lastSeen,
+    });
     const first = run({
       previous: [device({ uuid: "u1", isOnline: true, code: "1" })],
       current: [d],
@@ -108,23 +114,109 @@ describe("alert reconcile", () => {
     assert.equal(recovered.events.some((e) => e.outcome === "short"), true);
   });
 
-  test("offline dlhší ako grace počas hodín vytvorí ticket", () => {
-    const d = device({ uuid: "u1", isOnline: false, code: "1" });
+  test("offline dlhší ako 12 h počas hodín vytvorí ticket", () => {
+    const lastSeen = new Date(monday10.getTime() - 12 * 60 * 60_000).toISOString();
+    const d = device({
+      uuid: "u1",
+      isOnline: false,
+      code: "1",
+      lastConnectivityEvent: lastSeen,
+    });
     const first = run({
       previous: [device({ uuid: "u1", isOnline: true, code: "1" })],
       current: [d],
       now: monday10,
     });
-    const confirmed = run({
+    assert.equal(first.created, 1);
+    assert.equal(first.tickets.tickets[0].alertType, "offline");
+  });
+
+  test("víkendový offline neotvorí ticket pred pondelkom 07:00 Bratislava", () => {
+    // Saturday 10:00 CEST 2026-09-12
+    const sat10 = new Date("2026-09-12T08:00:00.000Z");
+    const lastSeen = sat10.toISOString();
+    const d = device({
+      uuid: "u1",
+      isOnline: false,
+      code: "1",
+      lastConnectivityEvent: lastSeen,
+    });
+    const saturday = run({
+      previous: [device({ uuid: "u1", isOnline: true, code: "1" })],
+      current: [d],
+      now: new Date("2026-09-12T14:00:00.000Z"), // Sat 16:00 CEST, 6+12? 6h only
+    });
+    assert.equal(saturday.created, 0);
+
+    const sundayEvening = run({
       previous: [d],
       current: [d],
-      now: new Date(monday10.getTime() + 16 * 60_000),
-      tickets: first.tickets,
-      pending: first.pending,
-      events: first.events,
+      now: new Date("2026-09-13T18:00:00.000Z"), // Sun 20:00 CEST, >12h
+      tickets: saturday.tickets,
+      pending: saturday.pending,
+      events: saturday.events,
     });
-    assert.equal(confirmed.created, 1);
-    assert.equal(confirmed.tickets.tickets[0].alertType, "offline");
+    assert.equal(sundayEvening.created, 0);
+
+    const mondayBefore7 = run({
+      previous: [d],
+      current: [d],
+      now: new Date("2026-09-14T04:59:00.000Z"), // Mon 06:59 CEST
+      tickets: sundayEvening.tickets,
+      pending: sundayEvening.pending,
+      events: mergeEvents(saturday.events, sundayEvening.events),
+    });
+    assert.equal(mondayBefore7.created, 0);
+
+    const mondayAt7 = run({
+      previous: [d],
+      current: [d],
+      now: new Date("2026-09-14T05:00:00.000Z"), // Mon 07:00 CEST
+      tickets: mondayBefore7.tickets,
+      pending: mondayBefore7.pending,
+      events: mergeEvents(saturday.events, sundayEvening.events, mondayBefore7.events),
+    });
+    assert.equal(mondayAt7.created, 1);
+    assert.equal(mondayAt7.tickets.tickets[0].alertType, "offline");
+  });
+
+  test("víkendový offline, ktorý je v pondelok 07:00 späť, ticket nevytvorí", () => {
+    const d = device({
+      uuid: "u1",
+      isOnline: false,
+      code: "1",
+      lastConnectivityEvent: "2026-09-12T08:00:00.000Z",
+    });
+    const saturday = run({
+      previous: [device({ uuid: "u1", isOnline: true, code: "1" })],
+      current: [d],
+      now: new Date("2026-09-12T08:00:00.000Z"),
+    });
+    const mondayOnline = run({
+      previous: [d],
+      current: [device({ uuid: "u1", isOnline: true, code: "1" })],
+      now: new Date("2026-09-14T05:00:00.000Z"),
+      tickets: saturday.tickets,
+      pending: saturday.pending,
+      events: saturday.events,
+    });
+    assert.equal(mondayOnline.created, 0);
+    assert.equal(mondayOnline.tickets.tickets.length, 0);
+  });
+
+  test("hromadný výpadok v sobotu z víkendového vypnutia nevznikne", () => {
+    const sat10 = new Date("2026-09-12T08:00:00.000Z");
+    const previous = Array.from({ length: 20 }, (_, i) =>
+      device({ uuid: `d${i}`, isOnline: true, code: String(i) }),
+    );
+    const current = previous.map((row) => ({
+      ...row,
+      isOnline: false,
+      lastConnectivityEvent: sat10.toISOString(),
+    }));
+    const result = run({ previous, current, now: sat10 });
+    assert.equal(result.created, 0);
+    assert.equal(result.mass, null);
   });
 
   test("offline v noci ide do histórie, nie do ticketov", () => {

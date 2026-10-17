@@ -105,7 +105,7 @@ export function estimateFromTickets(
     );
     const short =
       ticket.status === "hotove" &&
-      durationMinutes(ticket) < config.offlineGraceMinutes;
+      durationMinutes(ticket) < config.offlineThresholdHours * 60;
 
     if (outside) {
       offlineOutsideHours += 1;
@@ -157,7 +157,7 @@ export function estimateFromTickets(
     if (outside) continue;
     if (
       ticket.status === "hotove" &&
-      durationMinutes(ticket) < config.offlineGraceMinutes
+      durationMinutes(ticket) < config.offlineThresholdHours * 60
     ) {
       const dkey = ticket.deviceUuid || ticket.customerName || "x";
       shortsByDevice.set(dkey, (shortsByDevice.get(dkey) ?? 0) + 1);
