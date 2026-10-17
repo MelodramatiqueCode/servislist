@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { devicesForPrevadzka, listPrevadzkaProfiles, listTickets } from "@/lib/store";
+import { devicesForPrevadzky, listPrevadzkaProfiles, listTickets } from "@/lib/store";
 import { formatOpeningHours, JOB_TYPE_LABELS, profileCompleteness } from "@/lib/prevadzka-profile";
 import { storeLabel } from "@/lib/prevadzka-store";
 
@@ -12,20 +12,21 @@ export default async function PrevadzkyPage({
 }) {
   const params = await searchParams;
   const q = params.q ?? "";
-  const stores = await listPrevadzkaProfiles(q);
-  const tickets = await listTickets({ status: "aktivne", archived: "hide" });
+  const [stores, tickets] = await Promise.all([
+    listPrevadzkaProfiles(q),
+    listTickets({ status: "aktivne", archived: "hide" }),
+  ]);
+  const devicesByStore = await devicesForPrevadzky(stores);
 
-  const rows = await Promise.all(
-    stores.map(async (store) => {
-      const devices = await devicesForPrevadzka(store);
-      const open = tickets.filter(
-        (t) =>
-          t.prevadzkaId === store.id ||
-          (t.deviceUuid && devices.some((d) => d.uuid === t.deviceUuid)),
-      ).length;
-      return { store, devices, open, completeness: profileCompleteness(store) };
-    }),
-  );
+  const rows = stores.map((store, i) => {
+    const devices = devicesByStore[i] ?? [];
+    const open = tickets.filter(
+      (t) =>
+        t.prevadzkaId === store.id ||
+        (t.deviceUuid && devices.some((d) => d.uuid === t.deviceUuid)),
+    ).length;
+    return { store, devices, open, completeness: profileCompleteness(store) };
+  });
 
   return (
     <div className="shell page-stack space-y-6">

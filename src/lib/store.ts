@@ -79,6 +79,7 @@ import {
   backfillPrevadzkyFromDevices,
   createManualPrevadzka,
   getStoredPrevadzka,
+  listAllPrevadzkaDeviceUuids,
   listPrevadzkaDeviceUuids,
   listStoredPrevadzky,
   maybeWriteCloseVykaz,
@@ -171,7 +172,33 @@ async function ensureTicketsFile() {
   }
 }
 
+type StoreCache<T> = { at: number; value: Promise<T> } | null;
+const STORE_CACHE_MS = 2500;
+let ticketStoreCache: StoreCache<TicketStore> = null;
+let deviceStoreCache: StoreCache<DeviceStore> = null;
+let vyjazdStoreCache: StoreCache<VyjazdStore> = null;
+
+function cachedStore<T>(
+  slot: StoreCache<T>,
+  load: () => Promise<T>,
+  set: (next: StoreCache<T>) => void,
+): Promise<T> {
+  if (slot && Date.now() - slot.at < STORE_CACHE_MS) return slot.value;
+  const value = load().catch((error) => {
+    set(null);
+    throw error;
+  });
+  set({ at: Date.now(), value });
+  return value;
+}
+
 async function readTicketStore(): Promise<TicketStore> {
+  return cachedStore(ticketStoreCache, readTicketStoreUncached, (next) => {
+    ticketStoreCache = next;
+  });
+}
+
+async function readTicketStoreUncached(): Promise<TicketStore> {
   if (isDatabaseConfigured()) {
     return dbReadTicketStore();
   }
@@ -191,6 +218,7 @@ async function readTicketStore(): Promise<TicketStore> {
 }
 
 async function writeTicketStore(store: TicketStore) {
+  ticketStoreCache = null;
   if (isDatabaseConfigured()) {
     await dbWriteTicketStore(store);
     return;
@@ -200,6 +228,12 @@ async function writeTicketStore(store: TicketStore) {
 }
 
 async function readDeviceStore(): Promise<DeviceStore> {
+  return cachedStore(deviceStoreCache, readDeviceStoreUncached, (next) => {
+    deviceStoreCache = next;
+  });
+}
+
+async function readDeviceStoreUncached(): Promise<DeviceStore> {
   if (isDatabaseConfigured()) {
     return dbReadDeviceStore();
   }
@@ -269,6 +303,7 @@ function hydrateDevice(device: Partial<ServiceDevice> & Pick<ServiceDevice, "uui
 }
 
 async function writeDeviceStore(store: DeviceStore) {
+  deviceStoreCache = null;
   if (isDatabaseConfigured()) {
     await dbWriteDeviceStore(store);
     return;
@@ -519,6 +554,7 @@ async function runBalenaSync(options?: {
       devices,
     };
     await writeDeviceStore(store);
+    await backfillPrevadzkyFromDevices(devices);
 
     const online = devices.filter((d) => d.isOnline).length;
     return {
@@ -628,10 +664,9 @@ export async function getDevice(uuid: string): Promise<ServiceDevice | null> {
 }
 
 export async function getDeviceStats() {
-  const devices = await listDevices();
-  const partners = new Set(devices.map((d) => d.partner).filter(Boolean));
   const store = await readDeviceStore();
   const all = store.devices;
+  const partners = new Set(all.map((d) => d.partner).filter(Boolean));
   return {
     total: all.length,
     online: all.filter((d) => d.isOnline).length,
@@ -909,14 +944,15 @@ export async function addTicketNote(
 }
 
 export async function getStats() {
-  const tickets = await listTickets({ archived: "hide" });
-  const archived = await listTickets({ archived: "only" });
+  const store = await readTicketStore();
+  const live = store.tickets.filter((t) => matchesArchivedFilter(t, "hide"));
+  const archived = store.tickets.filter((t) => matchesArchivedFilter(t, "only"));
   return {
-    total: tickets.length,
-    otvorene: tickets.filter((t) => t.status === "otvorene").length,
-    v_rieseni: tickets.filter((t) => t.status === "v_rieseni").length,
-    caka_diely: tickets.filter((t) => t.status === "caka_diely").length,
-    hotove: tickets.filter((t) => t.status === "hotove").length,
+    total: live.length,
+    otvorene: live.filter((t) => t.status === "otvorene").length,
+    v_rieseni: live.filter((t) => t.status === "v_rieseni").length,
+    caka_diely: live.filter((t) => t.status === "caka_diely").length,
+    hotove: live.filter((t) => t.status === "hotove").length,
     archived: archived.length,
   };
 }
@@ -965,6 +1001,12 @@ async function ensureVyjazdyFile() {
 }
 
 async function readVyjazdStore(): Promise<VyjazdStore> {
+  return cachedStore(vyjazdStoreCache, readVyjazdStoreUncached, (next) => {
+    vyjazdStoreCache = next;
+  });
+}
+
+async function readVyjazdStoreUncached(): Promise<VyjazdStore> {
   if (isDatabaseConfigured()) {
     const store = await dbReadVyjazdStore();
     store.vyjazdy = (store.vyjazdy ?? []).map((v) => hydrateVyjazd(v));
@@ -978,6 +1020,7 @@ async function readVyjazdStore(): Promise<VyjazdStore> {
 }
 
 async function writeVyjazdStore(store: VyjazdStore) {
+  vyjazdStoreCache = null;
   if (isDatabaseConfigured()) {
     await dbWriteVyjazdStore(store);
     return;
@@ -1513,9 +1556,11 @@ export async function linkDeviceToPrevadzka(
   return store;
 }
 
-export async function devicesForPrevadzka(store: PrevadzkaRecord) {
-  const uuids = await listPrevadzkaDeviceUuids(store.id);
-  const all = (await readDeviceStore()).devices;
+export function matchDevicesForPrevadzka(
+  store: PrevadzkaRecord,
+  all: ServiceDevice[],
+  uuids: string[],
+) {
   const linked = all.filter((d) => uuids.includes(d.uuid));
   if (linked.length) return linked;
   return all.filter((d) => {
@@ -1524,4 +1569,22 @@ export async function devicesForPrevadzka(store: PrevadzkaRecord) {
       .join("|");
     return key === store.storeKey;
   });
+}
+
+export async function devicesForPrevadzka(store: PrevadzkaRecord) {
+  const [uuids, all] = await Promise.all([
+    listPrevadzkaDeviceUuids(store.id),
+    readDeviceStore(),
+  ]);
+  return matchDevicesForPrevadzka(store, all.devices, uuids);
+}
+
+export async function devicesForPrevadzky(stores: PrevadzkaRecord[]) {
+  const [all, linkMap] = await Promise.all([
+    readDeviceStore(),
+    listAllPrevadzkaDeviceUuids(),
+  ]);
+  return stores.map((store) =>
+    matchDevicesForPrevadzka(store, all.devices, linkMap.get(store.id) ?? []),
+  );
 }

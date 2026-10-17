@@ -301,12 +301,44 @@ export async function listPrevadzkaDeviceUuids(
     .map((d) => d.deviceUuid);
 }
 
+export async function listAllPrevadzkaDeviceUuids(): Promise<
+  Map<string, string[]>
+> {
+  const map = new Map<string, string[]>();
+  if (isDatabaseConfigured()) {
+    await ensureSchema();
+    const sql = getSql();
+    const rows = await sql`
+      SELECT prevadzka_id, device_uuid FROM prevadzka_devices
+    `;
+    for (const row of rows) {
+      const id = String((row as { prevadzka_id: string }).prevadzka_id);
+      const uuid = String((row as { device_uuid: string }).device_uuid);
+      const list = map.get(id) ?? [];
+      list.push(uuid);
+      map.set(id, list);
+    }
+    return map;
+  }
+  const blob = await readBlob();
+  for (const row of blob.devices) {
+    const list = map.get(row.prevadzkaId) ?? [];
+    list.push(row.deviceUuid);
+    map.set(row.prevadzkaId, list);
+  }
+  return map;
+}
+
 export async function backfillPrevadzkyFromDevices(devices: ServiceDevice[]) {
   const derived = buildPrevadzky(devices);
-  const existing = await listStoredPrevadzky();
+  const [existing, linkMap] = await Promise.all([
+    listStoredPrevadzky(),
+    listAllPrevadzkaDeviceUuids(),
+  ]);
   const byKey = new Map(existing.map((s) => [s.storeKey, s]));
   let created = 0;
   const stamp = nowIso();
+  const missingLinks: Array<{ storeId: string; uuid: string }> = [];
 
   for (const group of derived) {
     let store = byKey.get(group.key);
@@ -347,19 +379,28 @@ export async function backfillPrevadzkyFromDevices(devices: ServiceDevice[]) {
       }
       byKey.set(group.key, store);
     }
+    const have = new Set(linkMap.get(store.id) ?? []);
     for (const device of group.devices) {
-      if (isDatabaseConfigured()) {
-        await linkDeviceDb(store.id, device.uuid);
-      } else {
-        const blob = await readBlob();
-        if (
-          !blob.devices.some(
-            (d) => d.prevadzkaId === store!.id && d.deviceUuid === device.uuid,
-          )
-        ) {
-          blob.devices.push({ prevadzkaId: store.id, deviceUuid: device.uuid });
-          await writeBlob(blob);
-        }
+      if (have.has(device.uuid)) continue;
+      have.add(device.uuid);
+      missingLinks.push({ storeId: store.id, uuid: device.uuid });
+    }
+  }
+
+  if (isDatabaseConfigured()) {
+    await Promise.all(
+      missingLinks.map((row) => linkDeviceDb(row.storeId, row.uuid)),
+    );
+  } else {
+    for (const row of missingLinks) {
+      const blob = await readBlob();
+      if (
+        !blob.devices.some(
+          (d) => d.prevadzkaId === row.storeId && d.deviceUuid === row.uuid,
+        )
+      ) {
+        blob.devices.push({ prevadzkaId: row.storeId, deviceUuid: row.uuid });
+        await writeBlob(blob);
       }
     }
   }

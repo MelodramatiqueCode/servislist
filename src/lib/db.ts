@@ -1,4 +1,6 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+
+export const SCHEMA_VERSION = "perf-1";
 import type {
   AlertPending,
   DeviceEvent,
@@ -62,6 +64,10 @@ export async function ensureSchema() {
           value TEXT NOT NULL
         )
       `;
+      const versionRows = await sql`
+        SELECT value FROM app_meta WHERE key = 'schema_version' LIMIT 1
+      `;
+      if (String(versionRows[0]?.value ?? "") === SCHEMA_VERSION) return;
       await sql`
         CREATE TABLE IF NOT EXISTS tickets (
           id TEXT PRIMARY KEY,
@@ -443,8 +449,42 @@ export async function ensureSchema() {
           resolved_by TEXT NOT NULL DEFAULT ''
         )
       `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS tickets_list_idx
+        ON tickets (archived_at, status, updated_at DESC)
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS tickets_prevadzka_idx ON tickets (prevadzka_id)
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS dodacie_listy_stav_idx
+        ON dodacie_listy (stav, created_at DESC)
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS profile_suggestions_status_idx
+        ON profile_suggestions (status, created_at DESC)
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS bot_navrhy_stav_idx
+        ON bot_navrhy (stav, created_at DESC)
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS prevadzky_status_idx ON prevadzky (status)
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS sklad_polozky_kat_idx
+        ON sklad_polozky (kategoria, nazov)
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS material_status_idx ON material (status, ticket_id)
+      `;
       await archiveLegacyAutoTicketsOnce(sql);
       await archiveRedeployOfflineTicketsOnce(sql);
+      await sql`
+        INSERT INTO app_meta (key, value)
+        VALUES ('schema_version', ${SCHEMA_VERSION})
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+      `;
     })().catch((error) => {
       schemaReady = null;
       throw error;
@@ -597,12 +637,15 @@ function rowToTicket(row: Record<string, unknown>): Ticket {
 export async function dbReadTicketStore(): Promise<TicketStore> {
   await ensureSchema();
   const sql = getSql();
-  const rows = await sql`
-    SELECT *
-    FROM tickets
-    ORDER BY updated_at DESC
-  `;
-  const nextNumber = Number(await getMeta("next_ticket_number", "1")) || 1;
+  const [rows, nextRaw] = await Promise.all([
+    sql`
+      SELECT *
+      FROM tickets
+      ORDER BY updated_at DESC
+    `,
+    getMeta("next_ticket_number", "1"),
+  ]);
+  const nextNumber = Number(nextRaw) || 1;
   return {
     nextNumber,
     tickets: rows.map((row) => rowToTicket(row as Record<string, unknown>)),
@@ -705,12 +748,15 @@ function rowToVyjazd(row: Record<string, unknown>): Vyjazd {
 export async function dbReadVyjazdStore(): Promise<VyjazdStore> {
   await ensureSchema();
   const sql = getSql();
-  const rows = await sql`
-    SELECT *
-    FROM vyjazdy
-    ORDER BY updated_at DESC
-  `;
-  const nextNumber = Number(await getMeta("next_vyjazd_number", "1")) || 1;
+  const [rows, nextRaw] = await Promise.all([
+    sql`
+      SELECT *
+      FROM vyjazdy
+      ORDER BY updated_at DESC
+    `,
+    getMeta("next_vyjazd_number", "1"),
+  ]);
+  const nextNumber = Number(nextRaw) || 1;
   return {
     nextNumber,
     vyjazdy: rows.map((row) => rowToVyjazd(row as Record<string, unknown>)),
@@ -786,7 +832,12 @@ export async function dbWriteVyjazdStore(store: VyjazdStore) {
 
 export async function dbReadDeviceStore(): Promise<DeviceStore> {
   await ensureSchema();
-  const raw = await getMeta("devices_snapshot", "[]");
+  const [raw, importedAt, syncedAt, lastSyncError] = await Promise.all([
+    getMeta("devices_snapshot", "[]"),
+    getMeta("devices_imported_at", ""),
+    getMeta("devices_synced_at", ""),
+    getMeta("devices_last_sync_error", ""),
+  ]);
   let devices: ServiceDevice[] = [];
   try {
     const parsed = JSON.parse(raw) as ServiceDevice[];
@@ -796,9 +847,9 @@ export async function dbReadDeviceStore(): Promise<DeviceStore> {
   }
 
   return {
-    importedAt: await getMeta("devices_imported_at", ""),
-    syncedAt: (await getMeta("devices_synced_at", "")) || undefined,
-    lastSyncError: (await getMeta("devices_last_sync_error", "")) || undefined,
+    importedAt,
+    syncedAt: syncedAt || undefined,
+    lastSyncError: lastSyncError || undefined,
     devices,
   };
 }

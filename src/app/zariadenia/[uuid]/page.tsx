@@ -9,12 +9,7 @@ import {
 import { TICKET_ALERT_LABELS } from "@/lib/alerts";
 import { deviceEventCounts } from "@/lib/alert-state";
 import { formatDate, formatDuration, statusClass, ticketCode } from "@/lib/format";
-import {
-  ensureFreshBalenaSync,
-  getDevice,
-  listDeviceAlertEvents,
-  listTickets,
-} from "@/lib/store";
+import { getDevice, listDeviceAlertEvents, listTickets } from "@/lib/store";
 import { STATUS_LABELS, type DeviceEventOutcome } from "@/lib/types";
 
 const EVENT_OUTCOME_LABELS: Record<DeviceEventOutcome, string> = {
@@ -36,14 +31,12 @@ export default async function DeviceDetailPage({
   params: Promise<{ uuid: string }>;
 }) {
   const { uuid } = await params;
-  await ensureFreshBalenaSync();
-  const device = await getDevice(uuid);
-  if (!device) notFound();
-
-  const [tickets, events] = await Promise.all([
+  const [device, tickets, events] = await Promise.all([
+    getDevice(uuid),
     listTickets({ deviceUuid: uuid }),
     listDeviceAlertEvents(uuid, 7),
   ]);
+  if (!device) notFound();
   const counts = deviceEventCounts(events, 7);
   const alert = hasHealthAlert(device);
 
