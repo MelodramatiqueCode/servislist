@@ -463,6 +463,21 @@ curl -sS -X POST https://servislist.vercel.app/api/v1/sklad/prijem \
 
 Stav skladu sa nezmení, kým Martin príjem neschváli. Po schválení vzniknú pohyby `prijem`.
 
+### Návrhy ticketov a výjazdov (čakajú na Martina)
+
+Existujúce `POST /api/v1/tickets` ostáva fakt — ticket sa uloží hneď. Ak bot pošle `pending: true` (alebo `navrh: true`), vznikne len návrh. Martin ho schváli na `/kontrola`.
+
+```bash
+curl -sS -X POST https://servislist.vercel.app/api/v1/tickets \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "Offline Leles", "description": "2 h", "prevadzka": "Leles", "pending": true }'
+```
+
+`POST /api/v1/vyjazdy` vždy vytvorí **návrh výjazdu** (nie hotový výjazd). Rovnako `POST /api/v1/navrhy` s `kind: ticket|vyjazd`.
+
+Stránka `/kontrola` nie je v Bot API — je len v UI za Deployment Protection.
+
 ---
 
 ## Typické toky

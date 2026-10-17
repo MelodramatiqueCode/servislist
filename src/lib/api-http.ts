@@ -88,10 +88,56 @@ export async function handleBotRoute(
   request: Request,
   run: (actor: BotActor) => Promise<Response>,
 ) {
+  const started = Date.now();
+  const url = new URL(request.url);
+  let actor: BotActor | null = null;
   try {
-    const actor = await requireBot(request);
-    return await run(actor);
+    actor = await requireBot(request);
+    const response = await run(actor);
+    await logBotCall(actor, request.method, url.pathname, response.status, started);
+    return response;
   } catch (error) {
-    return jsonError(error);
+    const response = jsonError(error);
+    const status = response.status;
+    if (status >= 400) {
+      try {
+        const { captureAppError } = await import("./kontrola-store");
+        await captureAppError({
+          zdroj: "api",
+          route: url.pathname,
+          status,
+          bot: actor?.name ?? "",
+          message: error instanceof Error ? error.message : "API chyba",
+          stack: error instanceof Error ? error.stack : "",
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+    if (actor) {
+      await logBotCall(actor, request.method, url.pathname, status, started);
+    }
+    return response;
+  }
+}
+
+async function logBotCall(
+  actor: BotActor,
+  method: string,
+  path: string,
+  status: number,
+  started: number,
+) {
+  try {
+    const { logBotRequest } = await import("./kontrola-store");
+    await logBotRequest({
+      bot: actor.id,
+      method,
+      path,
+      status,
+      ms: Date.now() - started,
+    });
+  } catch {
+    /* ignore */
   }
 }

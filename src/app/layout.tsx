@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import { MobileChrome, SiteHeader } from "@/components/site-chrome";
+import { countPendingApprovals } from "@/lib/kontrola-store";
 import "./globals.css";
 
 const space = Space_Grotesk({
@@ -27,14 +28,20 @@ export const metadata: Metadata = {
     "Jednoduchý ticketing pre servis zariadení. Zadávaj problémy, sleduj stav a poznámky ako v to-do liste.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  let pendingCount = 0;
+  try {
+    pendingCount = await countPendingApprovals();
+  } catch {
+    pendingCount = 0;
+  }
   return (
     <html
       lang="sk"
       className={`${space.variable} ${inter.variable} ${mono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <SiteHeader />
+        <SiteHeader pendingCount={pendingCount} />
         <main className="flex-1">{children}</main>
         <MobileChrome />
       </body>

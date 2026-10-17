@@ -104,6 +104,9 @@ export function ApprovalsPanel({
           </div>
         ))
       )}
+      <Link href="/kontrola" className="btn btn-primary mt-3 w-full">
+        Všetky v Kontrole →
+      </Link>
     </aside>
   );
 }

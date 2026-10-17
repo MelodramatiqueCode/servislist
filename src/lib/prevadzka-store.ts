@@ -534,6 +534,18 @@ export async function createProfileSuggestion(input: {
     blob.suggestions.unshift(row);
     await writeBlob(blob);
   }
+  try {
+    const { writeAudit } = await import("./kontrola-store");
+    await writeAudit({
+      autor: row.actorName,
+      typ: "prevadzka",
+      akcia: "navrh",
+      entityId: row.prevadzkaId,
+      popis: `Zmena profilu: ${row.summary}`,
+    });
+  } catch {
+    /* audit must never break a mutation */
+  }
   return row;
 }
 
@@ -583,6 +595,18 @@ export async function resolveProfileSuggestion(
       resolver,
       `Návrh zamietnutý: ${suggestion.summary}`,
     );
+  }
+  try {
+    const { writeAudit } = await import("./kontrola-store");
+    await writeAudit({
+      autor: resolver,
+      typ: "prevadzka",
+      akcia: action === "accepted" ? "schvalil" : "zamietol",
+      entityId: suggestion.prevadzkaId,
+      popis: `${action === "accepted" ? "Schválená" : "Zamietnutá"} zmena profilu: ${suggestion.summary}`,
+    });
+  } catch {
+    /* audit must never break a mutation */
   }
   return { ...suggestion, status: action, resolvedAt, resolvedBy: resolver };
 }
@@ -925,6 +949,28 @@ export async function setPrevadzkaStatus(
         ? "Návrh prevádzky zamietnutý"
         : `Stav prevádzky: ${status}`,
   );
+  try {
+    const { writeAudit } = await import("./kontrola-store");
+    await writeAudit({
+      autor: author,
+      typ: "prevadzka",
+      akcia:
+        status === "active"
+          ? "schvalil"
+          : status === "rejected"
+            ? "zamietol"
+            : "zmenil",
+      entityId: next.id,
+      popis:
+        status === "active"
+          ? `Schválená prevádzka ${storeLabel(next)}`
+          : status === "rejected"
+            ? `Zamietnutá prevádzka ${storeLabel(next)}`
+            : `Stav prevádzky ${storeLabel(next)}: ${status}`,
+    });
+  } catch {
+    /* audit must never break a mutation */
+  }
   await refreshPrevadzkaHoursCache(await listStoredPrevadzky());
   return next;
 }

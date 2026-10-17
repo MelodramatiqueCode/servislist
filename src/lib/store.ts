@@ -123,6 +123,21 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+async function writeAuditSafe(input: {
+  autor?: string;
+  typ: "ticket" | "vyjazd" | "prevadzka" | "sklad" | "nastavenia";
+  akcia: string;
+  entityId?: string;
+  popis: string;
+}) {
+  try {
+    const { writeAudit } = await import("./kontrola-store");
+    await writeAudit(input);
+  } catch {
+    /* audit must never break a mutation */
+  }
+}
+
 function seedTickets(): TicketStore {
   return {
     nextNumber: 1,
@@ -346,6 +361,72 @@ export async function listDeviceAlertEvents(deviceUuid: string, days = 7) {
 }
 
 export async function syncFromBalenaCloud(options?: {
+  force?: boolean;
+}): Promise<SyncResult> {
+  const startedAt = nowIso();
+  try {
+    const result = await runBalenaSync(options);
+    await recordSyncRunSafe(startedAt, result);
+    return result;
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Sync z Baleny zlyhal.";
+    try {
+      const { captureAppError, recordSyncRun } = await import("./kontrola-store");
+      await captureAppError({
+        zdroj: "sync",
+        route: "/api/sync-balena",
+        message,
+        stack: error instanceof Error ? error.stack : "",
+      });
+      await recordSyncRun({
+        startedAt,
+        finishedAt: nowIso(),
+        ok: false,
+        devicesOnline: 0,
+        devicesOffline: 0,
+        devicesLongOffline: 0,
+        devicesTest: 0,
+        ticketsOpened: 0,
+        ticketsClosed: 0,
+        error: message,
+      });
+    } catch {
+      /* ignore */
+    }
+    throw error;
+  }
+}
+
+async function recordSyncRunSafe(startedAt: string, result: SyncResult) {
+  try {
+    const { recordSyncRun, captureAppError } = await import("./kontrola-store");
+    const stats = await getDeviceStats();
+    await recordSyncRun({
+      startedAt,
+      finishedAt: nowIso(),
+      ok: result.ok,
+      devicesOnline: result.online || stats.online,
+      devicesOffline: result.offline || stats.offline,
+      devicesLongOffline: stats.longOffline,
+      devicesTest: stats.test,
+      ticketsOpened: result.alertsCreated,
+      ticketsClosed: result.alertsResolved,
+      error: result.error || "",
+    });
+    if (!result.ok && result.error) {
+      await captureAppError({
+        zdroj: "sync",
+        route: "/api/sync-balena",
+        message: result.error,
+      });
+    }
+  } catch {
+    /* kontrola must not break sync */
+  }
+}
+
+async function runBalenaSync(options?: {
   force?: boolean;
 }): Promise<SyncResult> {
   const config = getBalenaConfig();
@@ -724,6 +805,13 @@ export async function createTicket(
   store.nextNumber += 1;
   store.tickets.unshift(ticket);
   await writeTicketStore(store);
+  await writeAuditSafe({
+    autor: opts?.author || ticket.assignedTo,
+    typ: "ticket",
+    akcia: "vytvoril",
+    entityId: ticket.id,
+    popis: `Ticket #${String(ticket.number).padStart(4, "0")} · ${ticket.customerName || ticket.title}`,
+  });
   return ticket;
 }
 
@@ -755,6 +843,15 @@ export async function updateTicketStatus(
     await maybeWriteCloseVykaz(ticket);
     const { writeOffUsedMaterial } = await import("./sklad-store");
     await writeOffUsedMaterial(ticket);
+  }
+  if (previous !== status) {
+    await writeAuditSafe({
+      autor: opts?.author || ticket.assignedTo,
+      typ: "ticket",
+      akcia: status === "hotove" ? "uzavrel" : "zmenil",
+      entityId: ticket.id,
+      popis: `Ticket #${String(ticket.number).padStart(4, "0")} · ${previous} → ${status}`,
+    });
   }
   return ticket;
 }
@@ -801,6 +898,13 @@ export async function addTicketNote(
   ticket.notes.push(note);
   ticket.updatedAt = note.createdAt;
   await writeTicketStore(store);
+  await writeAuditSafe({
+    autor: note.author,
+    typ: "ticket",
+    akcia: "poznamka",
+    entityId: ticket.id,
+    popis: `Ticket #${String(ticket.number).padStart(4, "0")} · ${note.text.slice(0, 80)}`,
+  });
   return ticket;
 }
 
@@ -1098,6 +1202,13 @@ export async function createVyjazd(input: CreateVyjazdInput): Promise<Vyjazd> {
   store.nextNumber += 1;
   store.vyjazdy.unshift(vyjazd);
   await writeVyjazdStore(store);
+  await writeAuditSafe({
+    autor: vyjazd.technician,
+    typ: "vyjazd",
+    akcia: "vytvoril",
+    entityId: vyjazd.id,
+    popis: `Výjazd V-${String(vyjazd.number).padStart(4, "0")} · ${vyjazd.title || vyjazd.store}`,
+  });
   return vyjazd;
 }
 
@@ -1357,6 +1468,13 @@ export async function createPrevadzkaWithJob(input: {
     ? input.material
     : materialTemplate(jobType);
   await replaceMaterial(ticket.id, store.id, rows);
+  await writeAuditSafe({
+    autor: input.author,
+    typ: "prevadzka",
+    akcia: store.status === "pending" ? "navrh" : "vytvoril",
+    entityId: store.id,
+    popis: `${store.status === "pending" ? "Návrh prevádzky" : "Nová prevádzka"} ${storeLabel(store)}`,
+  });
   return { store, ticket };
 }
 

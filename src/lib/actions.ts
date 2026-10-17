@@ -614,3 +614,50 @@ export async function korekciaAction(formData: FormData) {
   revalidatePath(`/sklad/polozky/${polozkaId}`);
   revalidatePath("/sklad/pohyby");
 }
+
+export async function resolveNavrhAction(formData: FormData) {
+  const { getNavrh, resolveNavrh } = await import("./kontrola-store");
+  const id = str(formData, "id");
+  if (!id) return;
+  const action = str(formData, "action") === "rejected" ? "rejected" : "accepted";
+  const author = str(formData, "author") || "Martin";
+  const current = await getNavrh(id);
+  if (!current || current.stav !== "cakajuci") return;
+  if (action === "accepted") {
+    if (current.kind === "ticket") {
+      const p = current.payload;
+      await createTicket(
+        {
+          title: String(p.title ?? "Návrh ticketu"),
+          description: String(p.description ?? ""),
+          deviceType: String(p.deviceType ?? ""),
+          deviceSerial: String(p.deviceSerial ?? ""),
+          deviceUuid: String(p.deviceUuid ?? ""),
+          customerName: String(p.customerName ?? ""),
+          customerPhone: String(p.customerPhone ?? ""),
+          assignedTo: String(p.assignedTo ?? author),
+          priority: normalizePriority(String(p.priority ?? "normalna")),
+          clientRef: String(p.clientRef ?? "") || undefined,
+        },
+        { author, note: String(p.note ?? "Schválený návrh bota.") },
+      );
+    } else {
+      const p = current.payload;
+      await createVyjazd({
+        title: String(p.title ?? "Návrh výjazdu"),
+        store: String(p.store ?? ""),
+        address: String(p.address ?? ""),
+        contactPhone: String(p.contactPhone ?? ""),
+        technician: String(p.technician ?? ""),
+        scheduledAt: String(p.scheduledAt ?? ""),
+        ticketId: String(p.ticketId ?? ""),
+        deviceUuid: String(p.deviceUuid ?? ""),
+        description: String(p.description ?? ""),
+      });
+    }
+  }
+  await resolveNavrh(id, action, author);
+  revalidatePath("/");
+  revalidatePath("/kontrola");
+  revalidatePath("/vyjazdy");
+}

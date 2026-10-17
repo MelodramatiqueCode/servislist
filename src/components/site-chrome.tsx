@@ -17,7 +17,7 @@ function navOn(pathname: string, href: string, exact?: boolean) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function SiteHeader() {
+export function SiteHeader({ pendingCount = 0 }: { pendingCount?: number }) {
   const pathname = usePathname() || "/";
   return (
     <header className="site-header">
@@ -42,6 +42,15 @@ export function SiteHeader() {
           </Link>
           <Link href="/novy" className="btn btn-primary whitespace-nowrap">
             + Nový problém
+          </Link>
+          <Link
+            href="/kontrola"
+            className="ctrl-btn"
+            title="Kontrola"
+            data-on={navOn(pathname, "/kontrola")}
+          >
+            🛡
+            {pendingCount > 0 ? <span className="dot">{pendingCount}</span> : null}
           </Link>
         </div>
       </div>
