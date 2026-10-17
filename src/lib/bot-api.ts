@@ -450,9 +450,17 @@ export async function botListDevices(url: URL) {
     onlineRaw === "online" || onlineRaw === "offline" || onlineRaw === "all"
       ? onlineRaw
       : "all";
+  const healthRaw = queryString(url, "health", "stav");
+  const health =
+    healthRaw === "long_offline" || healthRaw === "dlhodobo_offline"
+      ? "long_offline"
+      : healthRaw === "test"
+        ? "test"
+        : undefined;
   const devices = await listDevices({
     q: queryString(url, "q", "hladaj", "prevadzka"),
     online,
+    health,
     partner: queryString(url, "partner") || undefined,
   });
   return {

@@ -1,4 +1,7 @@
+import { getAlertConfig } from "./alert-config";
+import { isTestDevice, offlineDays } from "./alert-suppress";
 import { ticketCode, vyjazdCode } from "./format";
+import { isLongOfflineDevice } from "./parse-device";
 import { deviceStoreLabel, prevadzkaKey } from "./vyjazd-stops";
 import type {
   ServiceDevice,
@@ -77,6 +80,10 @@ export function serializeVyjazd(vyjazd: Vyjazd) {
   };
 }
 
+function roundDays(days: number | null) {
+  return days == null ? null : Math.floor(days * 10) / 10;
+}
+
 export function serializeDevice(device: ServiceDevice) {
   return {
     uuid: device.uuid,
@@ -96,6 +103,10 @@ export function serializeDevice(device: ServiceDevice) {
     fleet: device.fleet,
     dashboardUrl: device.dashboardUrl,
     lastSyncedAt: device.lastSyncedAt || "",
+    lastConnectivityEvent: device.lastConnectivityEvent || "",
+    offlineDays: roundDays(offlineDays(device, new Date())),
+    longOffline: isLongOfflineDevice(device),
+    testDevice: isTestDevice(device, getAlertConfig().ignoreDevices),
     note: device.note,
   };
 }

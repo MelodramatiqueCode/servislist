@@ -25,6 +25,9 @@ const EVENT_OUTCOME_LABELS: Record<DeviceEventOutcome, string> = {
   mass: "hromadný",
   recovered: "odznel",
   flap: "flap",
+  ignored: "testovacie (ignorované)",
+  long_offline: "dlhodobo offline",
+  archived: "už archivovaný ticket",
 };
 
 export default async function DeviceDetailPage({

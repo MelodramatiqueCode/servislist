@@ -1,3 +1,5 @@
+import { parseIgnoreList } from "./alert-suppress";
+
 export type HoursSpec = {
   startMinutes: number;
   endMinutes: number;
@@ -20,6 +22,10 @@ export type AlertConfig = {
   hoursOverrides: Record<string, HoursSpec>;
   flapWindowDays: number;
   flapMinCount: number;
+  /** Offline dlhšie ako N dní (Balena last-seen) = žiadny nový ticket, len prehľad „Dlhodobo offline“. */
+  longOfflineDays: number;
+  /** `ALERT_IGNORE_DEVICES` — UUID / názvy / kódy testovacích zariadení (bez auto ticketov). */
+  ignoreDevices: string[];
 };
 
 const DEFAULT_HOURS = "07:00-21:00";
@@ -115,6 +121,8 @@ export function defaultAlertConfig(): AlertConfig {
     hoursOverrides: {},
     flapWindowDays: 7,
     flapMinCount: 5,
+    longOfflineDays: 7,
+    ignoreDevices: [],
   };
 }
 
@@ -150,6 +158,11 @@ export function loadAlertConfig(env: NodeJS.ProcessEnv = process.env): AlertConf
       max: 90,
     }),
     flapMinCount: parseEnvInt(env.ALERT_FLAP_MIN_COUNT, 5, { min: 2, max: 1000 }),
+    longOfflineDays: parseEnvInt(env.ALERT_LONG_OFFLINE_DAYS, 7, {
+      min: 1,
+      max: 365,
+    }),
+    ignoreDevices: parseIgnoreList(env.ALERT_IGNORE_DEVICES),
   };
 }
 

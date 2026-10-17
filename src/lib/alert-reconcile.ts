@@ -9,6 +9,11 @@ import {
   shouldJoinMass,
 } from "./alert-policy";
 import {
+  findHandledArchivedTicket,
+  isLongOffline,
+  isTestDevice,
+} from "./alert-suppress";
+import {
   ALERT_LABELS,
   ALERT_TYPES,
   activationNote,
@@ -210,9 +215,35 @@ export function reconcileAlerts(input: ReconcileInput): ReconcileResult {
     [];
   const newlyShort = new Set<string>();
 
+  const allEvents = () => [...eventsById.values()];
+
+  const ignoredUuids = new Set<string>();
+  const longOfflineUuids = new Set<string>();
+
   for (const device of current) {
     const prev = prevMap.get(device.uuid);
     const openExisting = findOpenAutoTicket(tickets, device.uuid);
+
+    if (isTestDevice(device, config.ignoreDevices)) {
+      // Testovacie zariadenie: žiadne auto tickety, rozpracované epizódy zahoď.
+      ignoredUuids.add(device.uuid);
+      for (const type of ALERT_TYPES) {
+        const key = pendingKey(device.uuid, type);
+        const pending = pendingMap.get(key);
+        if (!pending) continue;
+        const event = getEvent(pending.eventId);
+        if (event && !event.endedAt) {
+          endEvent(event, timestamp, "ignored");
+          touchEvent(event);
+        }
+        pendingMap.delete(key);
+      }
+      continue;
+    }
+
+    const longOffline =
+      !device.isOnline && isLongOffline(device, now, config.longOfflineDays);
+    if (longOffline) longOfflineUuids.add(device.uuid);
 
     for (const type of ALERT_TYPES) {
       const key = pendingKey(device.uuid, type);
@@ -276,7 +307,34 @@ export function reconcileAlerts(input: ReconcileInput): ReconcileResult {
           pending: row,
           hasOpenHotTicket: ctx.hasOpenHotTicket,
         });
-        if (decision.confirm && !alreadyRaised) {
+        const alreadyHandled =
+          alreadyRaised ||
+          event?.outcome === "archived" ||
+          event?.outcome === "long_offline";
+        if (decision.confirm && !alreadyHandled) {
+          if (longOffline) {
+            // Dlhodobo offline (Balena last-seen > N dní): bez ticketu, len prehľad.
+            if (event) {
+              event.outcome = "long_offline";
+              touchEvent(event);
+            }
+            continue;
+          }
+          const handled = findHandledArchivedTicket(
+            tickets.tickets,
+            device,
+            type,
+            allEvents(),
+          );
+          if (handled) {
+            // Ten istý incident už mal ticket, ktorý bol archivovaný — nevytváraj znova.
+            if (event) {
+              event.outcome = "archived";
+              event.ticketId = handled.id;
+              touchEvent(event);
+            }
+            continue;
+          }
           if (type === "offline") offlineConfirm.push({ device, pending: row });
           else confirmOnTicket(device, type, row);
         }
@@ -284,8 +342,14 @@ export function reconcileAlerts(input: ReconcileInput): ReconcileResult {
         const event = getEvent(pending.eventId);
         const inHours = isWithinStoreHours(now, device, config);
         let outcome: DeviceEventOutcome = "short";
-        if (event?.outcome === "ticketed" || event?.outcome === "mass") {
+        if (
+          event?.outcome === "ticketed" ||
+          event?.outcome === "mass" ||
+          event?.outcome === "archived"
+        ) {
           outcome = "recovered";
+        } else if (event?.outcome === "long_offline") {
+          outcome = "long_offline";
         } else if (
           pending.alertType === "offline" &&
           !inHours &&
@@ -322,6 +386,16 @@ export function reconcileAlerts(input: ReconcileInput): ReconcileResult {
 
   const freshOffline = current.filter((device) => {
     const pending = pendingMap.get(pendingKey(device.uuid, "offline"));
+    if (ignoredUuids.has(device.uuid) || longOfflineUuids.has(device.uuid)) {
+      return false;
+    }
+    const pendingEvent = pending ? getEvent(pending.eventId) : undefined;
+    if (
+      pendingEvent?.outcome === "archived" ||
+      pendingEvent?.outcome === "long_offline"
+    ) {
+      return false;
+    }
     return Boolean(
       pending &&
         shouldJoinMass(pending.firstSeenAt, now, config.massWindowMinutes) &&
@@ -424,6 +498,7 @@ export function reconcileAlerts(input: ReconcileInput): ReconcileResult {
   const recentEvents = [...eventsById.values()];
   for (const device of current) {
     if (!newlyShort.has(device.uuid)) continue;
+    if (ignoredUuids.has(device.uuid)) continue;
     const count = countFlapEvents(
       recentEvents,
       device.uuid,

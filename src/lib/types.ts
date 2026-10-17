@@ -97,7 +97,10 @@ export type DeviceEventOutcome =
   | "outside_hours"
   | "mass"
   | "recovered"
-  | "flap";
+  | "flap"
+  | "ignored"
+  | "long_offline"
+  | "archived";
 
 export type DeviceEvent = {
   id: string;

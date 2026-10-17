@@ -480,6 +480,12 @@ export async function listDevices(filters?: {
     );
   }
 
+  if (health === "long_offline") {
+    const t = (d: ServiceDevice) =>
+      new Date(d.lastConnectivityEvent || 0).getTime() || 0;
+    devices.sort((a, b) => t(a) - t(b));
+  }
+
   if (filters?.partner && filters.partner !== "all") {
     devices = devices.filter(
       (d) => d.partner.toLowerCase() === filters.partner!.toLowerCase(),
@@ -530,6 +536,8 @@ export async function getDeviceStats() {
       matchesHealthFilter(d, "alerts"),
     ).length,
     vpnDown: all.filter((d) => matchesHealthFilter(d, "vpn_down")).length,
+    longOffline: all.filter((d) => matchesHealthFilter(d, "long_offline")).length,
+    test: all.filter((d) => matchesHealthFilter(d, "test")).length,
     partners: [...partners].sort((a, b) => a.localeCompare(b, "sk")),
     importedAt: store.importedAt,
     syncedAt: store.syncedAt || "",

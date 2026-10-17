@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { ImportDevicesPanel, SyncBalenaButton } from "@/components/device-ui";
+import { getAlertConfig } from "@/lib/alert-config";
+import { isTestDevice, offlineDays } from "@/lib/alert-suppress";
 import { getBalenaConfig } from "@/lib/balena";
 import {
   formatPercent,
   hardwareLabel,
   hasHealthAlert,
   isDiskFull,
+  isLongOfflineDevice,
   isHot,
   type DeviceHealthFilter,
 } from "@/lib/parse-device";
@@ -30,6 +33,8 @@ const HEALTH_OPTIONS: { id: DeviceHealthFilter; label: string }[] = [
   { id: "disk", label: "Disk plný" },
   { id: "vpn_down", label: "Bez VPN" },
   { id: "alerts", label: "Všetky alerty" },
+  { id: "long_offline", label: "Dlhodobo offline" },
+  { id: "test", label: "Testovacie" },
 ];
 
 function storeCountLabel(n: number) {
@@ -73,6 +78,8 @@ export default async function DevicesPage({
   ]);
 
   const fleetSlug = getBalenaConfig()?.fleetSlug || "ceo2/massiva";
+  const alertConfig = getAlertConfig();
+  const now = new Date();
 
   const healthCount = (id: DeviceHealthFilter) => {
     if (id === "all") return stats.total;
@@ -83,6 +90,8 @@ export default async function DevicesPage({
     if (id === "disk") return stats.disk;
     if (id === "vpn_down") return stats.vpnDown;
     if (id === "alerts") return stats.alerts;
+    if (id === "long_offline") return stats.longOffline;
+    if (id === "test") return stats.test;
     return 0;
   };
 
@@ -206,6 +215,22 @@ export default async function DevicesPage({
           </p>
         </div>
 
+        {health === "long_offline" ? (
+          <p className="border-b border-[var(--line)] px-3 py-2 text-sm text-[var(--ink-soft)] md:px-4">
+            Zariadenia offline dlhšie ako {alertConfig.longOfflineDays} dní
+            (podľa poslednej konektivity v Balene). Nové Offline tickety
+            nevytvárajú — keď sa vrátia online a znova padnú, ticket vznikne
+            normálne.
+          </p>
+        ) : null}
+        {health === "test" ? (
+          <p className="border-b border-[var(--line)] px-3 py-2 text-sm text-[var(--ink-soft)] md:px-4">
+            Testovacie zariadenia (Demo, Balena predvolené názvy typu
+            „quiet-engine“, alebo ALERT_IGNORE_DEVICES) — nikdy netvoria auto
+            tickety.
+          </p>
+        ) : null}
+
         <div className="divide-y divide-[var(--line)]">
           {devices.length === 0 ? (
             <div className="space-y-4 p-8 text-center text-[var(--ink-soft)]">
@@ -216,6 +241,9 @@ export default async function DevicesPage({
             devices.map((d) => {
               const alert = hasHealthAlert(d);
               const meta = [d.city, d.partner, d.code].filter(Boolean).join(" · ");
+              const longOffline = isLongOfflineDevice(d, now);
+              const daysOff = offlineDays(d, now);
+              const testDevice = isTestDevice(d, alertConfig.ignoreDevices);
               return (
                 <Link
                   key={d.uuid}
@@ -232,6 +260,14 @@ export default async function DevicesPage({
                       >
                         {d.isOnline ? "Online" : "Offline"}
                       </span>
+                      {longOffline && daysOff != null ? (
+                        <span className="chip chip-compact chip-warn">
+                          Dlhodobo offline · {Math.floor(daysOff)} dní
+                        </span>
+                      ) : null}
+                      {testDevice ? (
+                        <span className="chip chip-compact">Testovacie</span>
+                      ) : null}
                       {d.isUndervolted ? (
                         <span className="chip chip-compact chip-warn">
                           Undervolt
