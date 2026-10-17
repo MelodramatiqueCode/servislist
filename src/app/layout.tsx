@@ -1,18 +1,24 @@
 import type { Metadata } from "next";
-import { Source_Sans_3, Syne } from "next/font/google";
-import Link from "next/link";
+import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import { MobileChrome, SiteHeader } from "@/components/site-chrome";
 import "./globals.css";
 
-const syne = Syne({
-  variable: "--font-syne",
+const space = Space_Grotesk({
+  variable: "--font-space",
   subsets: ["latin", "latin-ext"],
-  weight: ["600", "700", "800"],
+  weight: ["500", "700"],
 });
 
-const sourceSans = Source_Sans_3({
-  variable: "--font-source-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin", "latin-ext"],
   weight: ["400", "500", "600", "700"],
+});
+
+const mono = JetBrains_Mono({
+  variable: "--font-mono",
+  subsets: ["latin", "latin-ext"],
+  weight: ["400"],
 });
 
 export const metadata: Metadata = {
@@ -25,40 +31,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="sk"
-      className={`${syne.variable} ${sourceSans.variable} h-full antialiased`}
+      className={`${space.variable} ${inter.variable} ${mono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <header className="site-header">
-          <div className="shell flex items-center justify-between gap-4 py-3.5">
-            <Link href="/" className="brand">
-              Servis<span>List</span>
-            </Link>
-            <nav className="flex flex-wrap items-center justify-end gap-2">
-              <Link href="/" className="btn btn-ghost">
-                Tickety
-              </Link>
-              <Link href="/prevadzky" className="btn btn-ghost">
-                Prevádzky
-              </Link>
-              <Link href="/zariadenia" className="btn btn-ghost">
-                Zariadenia
-              </Link>
-              <Link href="/vyjazdy" className="btn btn-ghost">
-                Výjazdy
-              </Link>
-              <Link href="/prevadzky/nova" className="btn btn-ghost whitespace-nowrap">
-                + Nová prevádzka
-              </Link>
-              <Link href="/novy" className="btn btn-primary whitespace-nowrap">
-                + Nový problém
-              </Link>
-            </nav>
-          </div>
-        </header>
-        <main className="flex-1 py-8 md:py-10">{children}</main>
-        <footer className="shell pb-8 pt-2 text-sm text-[var(--ink-soft)]">
-          ServisList — ticketing pre servisákov. Problémy ako to-do list.
-        </footer>
+        <SiteHeader />
+        <main className="flex-1">{children}</main>
+        <MobileChrome />
       </body>
     </html>
   );

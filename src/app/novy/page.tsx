@@ -37,7 +37,7 @@ export default async function NewTicketPage({
     : "";
 
   return (
-    <div className="shell max-w-3xl space-y-6">
+    <div className="shell detail-page max-w-3xl space-y-8">
       <div className="fade-up space-y-2">
         <Link href="/" className="text-sm font-semibold text-[var(--teal)]">
           ← Späť na tickety

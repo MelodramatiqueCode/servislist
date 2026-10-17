@@ -575,6 +575,7 @@ export async function getDeviceStats() {
 export async function listTickets(filters?: {
   status?: TicketStatus | "vsetky" | "aktivne";
   source?: TicketSource | "vsetky";
+  priority?: TicketPriority | "vsetky";
   q?: string;
   deviceUuid?: string;
   archived?: ArchivedFilter;
@@ -598,6 +599,10 @@ export async function listTickets(filters?: {
 
   if (filters?.source && filters.source !== "vsetky") {
     tickets = tickets.filter((t) => (t.source ?? "manual") === filters.source);
+  }
+
+  if (filters?.priority && filters.priority !== "vsetky") {
+    tickets = tickets.filter((t) => t.priority === filters.priority);
   }
 
   if (filters?.deviceUuid) {

@@ -69,7 +69,7 @@ export default async function NewVyjazdPage({
   const statuses = Object.keys(VYJAZD_STATUS_LABELS) as VyjazdStatus[];
 
   return (
-    <div className="shell max-w-3xl space-y-6">
+    <div className="shell detail-page max-w-3xl space-y-8">
       <div className="fade-up space-y-2">
         <Link
           href="/vyjazdy"

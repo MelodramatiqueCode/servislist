@@ -424,6 +424,25 @@ export async function addPrevadzkaDevice(prevadzkaId: string, deviceUuid: string
   return store;
 }
 
+export async function listAllPendingSuggestions() {
+  if (isDatabaseConfigured()) {
+    await ensureSchema();
+    const sql = getSql();
+    const rows = await sql`
+      SELECT * FROM profile_suggestions
+      WHERE status = 'pending'
+      ORDER BY created_at DESC
+    `;
+    return rows.map((r) => suggestionFromRow(r as Record<string, unknown>));
+  }
+  const blob = await readBlob();
+  return blob.suggestions.filter((s) => s.status === "pending");
+}
+
+export async function listPendingPrevadzky() {
+  return (await listStoredPrevadzky()).filter((s) => s.status === "pending");
+}
+
 export async function listProfileSuggestions(
   prevadzkaId: string,
   status: ProfileSuggestion["status"] | "all" = "pending",
