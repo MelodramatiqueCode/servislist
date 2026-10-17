@@ -753,6 +753,8 @@ export async function updateTicketStatus(
   await writeTicketStore(store);
   if (status === "hotove" && previous !== "hotove") {
     await maybeWriteCloseVykaz(ticket);
+    const { writeOffUsedMaterial } = await import("./sklad-store");
+    await writeOffUsedMaterial(ticket);
   }
   return ticket;
 }

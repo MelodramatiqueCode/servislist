@@ -84,6 +84,8 @@ describe("command search", () => {
     const hits = searchCommands("nový ticket");
     assert.equal(hits[0]?.href, "/novy");
     assert.ok(searchCommands("nová prevádzka").some((h) => h.href === "/prevadzky/nova"));
+    assert.ok(searchCommands("sklad").some((h) => h.href === "/sklad"));
+    assert.ok(searchCommands("nový príjem").some((h) => h.href === "/sklad/prijem"));
   });
 
   test("catalog finds tickets by code and store name", () => {
