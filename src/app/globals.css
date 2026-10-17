@@ -458,6 +458,61 @@ h3,
   border: 1px solid var(--line);
 }
 
+a.stat,
+a.hero-stat,
+a.ctrl-tile {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    border-color 0.12s ease,
+    background-color 0.12s ease;
+}
+
+a.stat:hover,
+a.ctrl-tile:hover {
+  border-color: #b8bec6;
+  box-shadow: var(--shadow);
+}
+
+a.hero-stat:hover {
+  border-color: #3d4752;
+  background: #222930;
+}
+
+a.hero-stat.hot:hover {
+  background: #ff5a28;
+  border-color: #ff5a28;
+}
+
+a.stat:active,
+a.hero-stat:active,
+a.ctrl-tile:active {
+  transform: scale(0.98);
+}
+
+a.stat:focus-visible,
+a.hero-stat:focus-visible,
+a.ctrl-tile:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+a.stat[data-on="true"] {
+  border-color: var(--ink);
+}
+
+a.hero-stat[data-on="true"] {
+  border-color: #8d97a2;
+}
+
+a.ctrl-tile[data-on="true"] {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
 .stat strong {
   display: block;
   font-family: var(--font-display), sans-serif;

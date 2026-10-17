@@ -23,6 +23,7 @@ import {
   type SkladPolozka,
 } from "./sklad";
 import { dlFileViewUrl, inspectDlFile, type DlFileBytes } from "./sklad-upload";
+import { inDateRange } from "./refs";
 
 type FileBlob = {
   polozky: SkladPolozka[];
@@ -291,13 +292,8 @@ export async function listPohyby(opts?: {
   if (opts?.prevadzkaId) {
     items = items.filter((p) => p.prevadzkaId === opts.prevadzkaId);
   }
-  if (opts?.from) {
-    const from = new Date(opts.from).getTime();
-    items = items.filter((p) => new Date(p.datum).getTime() >= from);
-  }
-  if (opts?.to) {
-    const to = new Date(opts.to).getTime();
-    items = items.filter((p) => new Date(p.datum).getTime() <= to);
+  if (opts?.from || opts?.to) {
+    items = items.filter((p) => inDateRange(p.datum, opts.from, opts.to));
   }
   return items;
 }

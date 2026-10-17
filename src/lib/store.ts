@@ -1047,8 +1047,16 @@ function sortVyjazdy(vyjazdy: Vyjazd[]) {
   });
 }
 
+export function vyjazdIsOverdue(status: VyjazdStatus, scheduledAt: string) {
+  if (status !== "naplanovany" && status !== "prebieha") return false;
+  if (!scheduledAt) return false;
+  const t = new Date(scheduledAt).getTime();
+  return !Number.isNaN(t) && t < Date.now();
+}
+
 export async function listVyjazdy(filters?: {
-  status?: VyjazdStatus | "vsetky";
+  status?: VyjazdStatus | "vsetky" | "plan";
+  overdue?: boolean;
   q?: string;
   deviceUuid?: string;
   ticketId?: string;
@@ -1059,8 +1067,14 @@ export async function listVyjazdy(filters?: {
   const store = await readVyjazdStore();
   let vyjazdy = [...store.vyjazdy];
 
-  if (filters?.status && filters.status !== "vsetky") {
+  if (filters?.status === "plan") {
+    vyjazdy = vyjazdy.filter((v) => VYJAZD_ACTIVE.includes(v.status));
+  } else if (filters?.status && filters.status !== "vsetky") {
     vyjazdy = vyjazdy.filter((v) => v.status === filters.status);
+  }
+
+  if (filters?.overdue) {
+    vyjazdy = vyjazdy.filter((v) => vyjazdIsOverdue(v.status, v.scheduledAt));
   }
 
   if (filters?.deviceUuid) {

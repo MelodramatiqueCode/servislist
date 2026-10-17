@@ -32,12 +32,14 @@ import {
   listTickets,
   listVyjazdy,
 } from "@/lib/store";
+import { localDateKey } from "@/lib/refs";
 import {
   PRIORITY_LABELS,
   type TicketPriority,
   type TicketSource,
   type TicketStatus,
 } from "@/lib/types";
+import { StatCard } from "@/components/stat-card";
 
 type SearchParams = Promise<{
   status?: string;
@@ -46,6 +48,7 @@ type SearchParams = Promise<{
   archiv?: string;
   priority?: string;
   region?: string;
+  dnes?: string;
 }>;
 
 function ticketsHref(opts: {
@@ -55,6 +58,7 @@ function ticketsHref(opts: {
   archiv?: boolean;
   priority?: TicketPriority | "vsetky";
   region?: string;
+  dnes?: boolean;
 }) {
   const params = new URLSearchParams();
   if (opts.archiv) params.set("archiv", "1");
@@ -65,6 +69,7 @@ function ticketsHref(opts: {
   }
   if (opts.region?.trim()) params.set("region", opts.region.trim());
   if (opts.q?.trim()) params.set("q", opts.q.trim());
+  if (opts.dnes) params.set("dnes", "1");
   const qs = params.toString();
   return qs ? `/?${qs}` : "/";
 }
@@ -90,16 +95,19 @@ export default async function Home({
   const q = params.q ?? "";
   const archiv = params.archiv === "1" || params.archiv === "only";
   const region = params.region ?? "";
+  const dnes = params.dnes === "1";
 
   const status: TicketStatus | "vsetky" | "aktivne" = archiv
     ? "vsetky"
-    : statusRaw === "otvorene" ||
-        statusRaw === "v_rieseni" ||
-        statusRaw === "caka_diely" ||
-        statusRaw === "hotove" ||
-        statusRaw === "vsetky"
-      ? statusRaw
-      : "aktivne";
+    : dnes
+      ? "hotove"
+      : statusRaw === "otvorene" ||
+          statusRaw === "v_rieseni" ||
+          statusRaw === "caka_diely" ||
+          statusRaw === "hotove" ||
+          statusRaw === "vsetky"
+        ? statusRaw
+        : "aktivne";
 
   const tab = archiv
     ? "archiv"
@@ -131,6 +139,9 @@ export default async function Home({
       priority,
       q,
       archived: archiv ? "only" : "hide",
+      from: dnes ? localDateKey() : undefined,
+      to: dnes ? localDateKey() : undefined,
+      dateField: dnes ? "updatedAt" : undefined,
     }),
     getStats(),
     getDeviceStats(),
@@ -196,17 +207,23 @@ export default async function Home({
         <div className="shell space-y-0">
           <CommandTrigger />
           <div className="hero-stats">
-            <div className="hero-stat hot">
+            <StatCard
+              href={ticketsHref({ status: "aktivne" })}
+              className="hero-stat hot"
+              active={!dnes && !archiv && (status === "aktivne" || tab === "otvorene")}
+            >
               <div className="l">
                 <span className="pulse r" />
                 Otvorené tickety
               </div>
               <div className="v">{openCount}</div>
-              <div className="h">
-                {highOpen} vysoká
-              </div>
-            </div>
-            <div className="hero-stat">
+              <div className="h">{highOpen} vysoká</div>
+            </StatCard>
+            <StatCard
+              href={ticketsHref({ status: "hotove", dnes: true })}
+              className="hero-stat"
+              active={dnes}
+            >
               <div className="l">Dnes vyriešené</div>
               <div className="v">{todayDone.length}</div>
               <div className="h">
@@ -217,8 +234,8 @@ export default async function Home({
                       .join(", ")
                   : "zatiaľ žiadne"}
               </div>
-            </div>
-            <div className="hero-stat">
+            </StatCard>
+            <StatCard href="/zariadenia?health=online" className="hero-stat">
               <div className="l">
                 <span className="pulse" />
                 Zariadenia online
@@ -236,8 +253,8 @@ export default async function Home({
                 />
                 <circle cx={spark.lastX} cy={spark.lastY} r="3" fill="#ff4d1a" />
               </svg>
-            </div>
-            <div className="hero-stat">
+            </StatCard>
+            <StatCard href="/vyjazdy?status=plan" className="hero-stat">
               <div className="l">Naplánované výjazdy</div>
               <div className="v">{plannedCount}</div>
               <div className="h">
@@ -249,7 +266,7 @@ export default async function Home({
                     }).format(new Date(nextVyjazd.scheduledAt))}`
                   : "žiadny v pláne"}
               </div>
-            </div>
+            </StatCard>
           </div>
         </div>
       </div>
@@ -289,9 +306,18 @@ export default async function Home({
               Archív<em>{stats.archived}</em>
             </Link>
           </div>
+          {dnes ? (
+            <Link
+              href={ticketsHref({ status: "hotove", source, q, priority, region })}
+              className="chip chip-active"
+            >
+              Dnes ×
+            </Link>
+          ) : null}
           <span className="flex-1" />
           <form action="/" method="get">
             {archiv ? <input type="hidden" name="archiv" value="1" /> : null}
+            {dnes ? <input type="hidden" name="dnes" value="1" /> : null}
             {status !== "aktivne" ? (
               <input type="hidden" name="status" value={status} />
             ) : null}
@@ -311,6 +337,7 @@ export default async function Home({
           </form>
           <form action="/" method="get">
             {archiv ? <input type="hidden" name="archiv" value="1" /> : null}
+            {dnes ? <input type="hidden" name="dnes" value="1" /> : null}
             {status !== "aktivne" ? (
               <input type="hidden" name="status" value={status} />
             ) : null}
@@ -327,6 +354,7 @@ export default async function Home({
           </form>
           <form action="/" method="get">
             {archiv ? <input type="hidden" name="archiv" value="1" /> : null}
+            {dnes ? <input type="hidden" name="dnes" value="1" /> : null}
             {status !== "aktivne" ? (
               <input type="hidden" name="status" value={status} />
             ) : null}

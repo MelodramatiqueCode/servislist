@@ -55,6 +55,19 @@ export function inDateRange(
   return true;
 }
 
+export function localDateKey(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function localMonthRange(d = new Date()) {
+  const start = new Date(d.getFullYear(), d.getMonth(), 1);
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return { from: localDateKey(start), to: localDateKey(end) };
+}
+
 function parseRangeBound(value: string, edge: "start" | "end"): number | null {
   const raw = value.trim();
   if (!raw) return null;

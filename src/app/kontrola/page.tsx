@@ -17,6 +17,7 @@ import {
 } from "@/lib/kontrola-session";
 import { kontrolaSnapshot } from "@/lib/kontrola-view";
 import { relativeAge } from "@/lib/pulse";
+import { StatCard } from "@/components/stat-card";
 
 type Search = Promise<{
   q?: string;
@@ -25,6 +26,7 @@ type Search = Promise<{
   akcia?: string;
   chyba?: string;
   e?: string;
+  log?: string;
 }>;
 
 export default async function KontrolaPage({
@@ -75,7 +77,7 @@ export default async function KontrolaPage({
       <section className="panel space-y-4 p-5">
         <h2 className="text-lg font-bold">Stav systému</h2>
         <div className="ctrl-tiles">
-          <div className={`ctrl-tile ${snap.sync.ok ? "ok" : "warn"}`}>
+          <StatCard href="/zariadenia" className={`ctrl-tile ${snap.sync.ok ? "ok" : "warn"}`}>
             <div className="k">
               Balena sync <span>{snap.sync.ok ? "● OK" : "● stojí"}</span>
             </div>
@@ -85,8 +87,8 @@ export default async function KontrolaPage({
               <br />
               dlhodobo {snap.sync.longOffline} · test {snap.sync.test}
             </div>
-          </div>
-          <div className="ctrl-tile ok">
+          </StatCard>
+          <StatCard href="/kontrola" className="ctrl-tile ok">
             <div className="k">
               Deploy appky <span>● OK</span>
             </div>
@@ -99,8 +101,8 @@ export default async function KontrolaPage({
               <br />
               {(snap.deploy.message || snap.deploy.builtAt || "bez správy").slice(0, 48)}
             </div>
-          </div>
-          <div className="ctrl-tile ok">
+          </StatCard>
+          <StatCard href="/kontrola" className="ctrl-tile ok">
             <div className="k">
               Bot API <span>● {snap.api.today} dnes</span>
             </div>
@@ -110,8 +112,12 @@ export default async function KontrolaPage({
               <br />
               priem. odozva {snap.api.avgMs} ms
             </div>
-          </div>
-          <div className={`ctrl-tile ${snap.errors.count ? "warn" : "ok"}`}>
+          </StatCard>
+          <StatCard
+            href="/kontrola?log=chyby"
+            className={`ctrl-tile ${snap.errors.count ? "warn" : "ok"}`}
+            active={params.log === "chyby"}
+          >
             <div className="k">
               Chyby 24 h <span>● {snap.errors.count}</span>
             </div>
@@ -121,8 +127,8 @@ export default async function KontrolaPage({
                 ? `${snap.errors.items[0].status} ${snap.errors.items[0].route}`
                 : "žiadne"}
             </div>
-          </div>
-          <div className={`ctrl-tile ${snap.db.ok ? "ok" : "bad"}`}>
+          </StatCard>
+          <StatCard href="/kontrola" className={`ctrl-tile ${snap.db.ok ? "ok" : "bad"}`}>
             <div className="k">
               Databáza <span>{snap.db.ok ? "● OK" : "● chyba"}</span>
             </div>
@@ -133,7 +139,7 @@ export default async function KontrolaPage({
             <div className="s">
               {snap.db.ok ? "schéma aktuálna" : snap.db.error || "nedostupná"}
             </div>
-          </div>
+          </StatCard>
         </div>
       </section>
 
@@ -305,6 +311,43 @@ export default async function KontrolaPage({
           Formát počítadla ticketov: vytvorené / zmenené tento týždeň.
         </p>
       </section>
+
+      {params.log === "chyby" ? (
+        <section className="panel space-y-4 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-bold">Chyby 24 h</h2>
+            <Link href="/kontrola" className="chip chip-active">
+              Chyby ×
+            </Link>
+          </div>
+          {snap.errors.items.length === 0 ? (
+            <p className="text-sm text-[var(--ink-soft)]">Žiadne chyby za 24 h.</p>
+          ) : (
+            <table className="profile-table">
+              <thead>
+                <tr>
+                  <th>Čas</th>
+                  <th>Zdroj</th>
+                  <th>Trasa</th>
+                  <th>Správa</th>
+                </tr>
+              </thead>
+              <tbody>
+                {snap.errors.items.map((err) => (
+                  <tr key={err.id}>
+                    <td className="whitespace-nowrap">{formatDateTime(err.at)}</td>
+                    <td>{err.zdroj}</td>
+                    <td className="font-mono text-xs">
+                      {err.status} {err.route}
+                    </td>
+                    <td>{err.message}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      ) : null}
 
       <section className="panel space-y-4 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">

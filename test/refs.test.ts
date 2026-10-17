@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { inDateRange, parseTicketRef, parseVyjazdRef } from "../src/lib/refs";
+import {
+  inDateRange,
+  localDateKey,
+  localMonthRange,
+  parseTicketRef,
+  parseVyjazdRef,
+} from "../src/lib/refs";
 
 describe("refs", () => {
   test("parsuje číslo a kód ticketu", () => {
@@ -27,5 +33,17 @@ describe("refs", () => {
       false,
     );
     assert.equal(inDateRange("2026-10-16T12:00:00.000Z", "2026-10-17"), false);
+  });
+
+  test("localDateKey a localMonthRange používajú lokálny kalendár", () => {
+    assert.equal(localDateKey(new Date(2026, 9, 17)), "2026-10-17");
+    assert.deepEqual(localMonthRange(new Date(2026, 9, 17)), {
+      from: "2026-10-01",
+      to: "2026-10-31",
+    });
+    assert.deepEqual(localMonthRange(new Date(2024, 1, 15)), {
+      from: "2024-02-01",
+      to: "2024-02-29",
+    });
   });
 });

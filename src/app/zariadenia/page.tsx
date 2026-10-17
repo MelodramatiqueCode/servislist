@@ -13,6 +13,7 @@ import {
   type DeviceHealthFilter,
 } from "@/lib/parse-device";
 import { getDeviceStats, listDevices } from "@/lib/store";
+import { StatCard } from "@/components/stat-card";
 
 type SearchParams = Promise<{
   q?: string;
@@ -123,36 +124,36 @@ export default async function DevicesPage({
         className="fade-up grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
         style={{ animationDelay: "40ms" }}
       >
-        <div className="stat">
+        <StatCard href={qs({ health: "all" })} className="stat" active={health === "all"}>
           <span className="text-sm text-[var(--ink-soft)]">Celkom</span>
           <strong>{stats.total}</strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href={qs({ health: "online" })} className="stat" active={health === "online"}>
           <span className="text-sm text-[var(--ink-soft)]">Online</span>
           <strong>{stats.online}</strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href={qs({ health: "offline" })} className="stat" active={health === "offline"}>
           <span className="text-sm text-[var(--ink-soft)]">Offline</span>
           <strong>{stats.offline}</strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href={qs({ health: "undervolt" })} className="stat" active={health === "undervolt"}>
           <span className="text-sm text-[var(--ink-soft)]">Undervolt</span>
           <strong className={stats.undervolt > 0 ? "text-[var(--acc)]" : ""}>
             {stats.undervolt}
           </strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href={qs({ health: "hot" })} className="stat" active={health === "hot"}>
           <span className="text-sm text-[var(--ink-soft)]">Horúce</span>
           <strong className={stats.hot > 0 ? "text-[var(--danger)]" : ""}>
             {stats.hot}
           </strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href={qs({ health: "alerts" })} className="stat" active={health === "alerts"}>
           <span className="text-sm text-[var(--ink-soft)]">Alerty</span>
           <strong className={stats.alerts > 0 ? "text-[var(--danger)]" : ""}>
             {stats.alerts}
           </strong>
-        </div>
+        </StatCard>
       </section>
 
       <section

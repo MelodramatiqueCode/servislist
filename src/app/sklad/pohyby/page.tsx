@@ -84,6 +84,11 @@ export default async function SkladPohybyPage({
         <button className="btn btn-ghost" type="submit">
           Filtrovať
         </button>
+        {params.typ || params.polozka || params.prevadzka || params.od || params.do ? (
+          <Link href="/sklad/pohyby" className="btn btn-ghost">
+            Zrušiť filter
+          </Link>
+        ) : null}
       </form>
       <section className="panel overflow-hidden">
         <table className="profile-table">
