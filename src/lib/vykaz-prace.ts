@@ -1,4 +1,5 @@
 import type { Ticket, Vyjazd } from "./types";
+import { vyjazdTicketIds } from "./vyjazd-stops";
 
 export const VYKAZ_TYPES = [
   "montaz",
@@ -57,6 +58,45 @@ function lastUsefulNote(ticket: Ticket) {
   const notes = [...(ticket.notes ?? [])].reverse();
   const hit = notes.find((n) => n.text.trim() && !n.text.startsWith("Stav zmenený"));
   return hit?.text.trim() || ticket.description.trim();
+}
+
+const MACHINE_AUTHORS = new Set([
+  "automat",
+  "servis bot",
+  "hotline bot",
+]);
+
+export function isMachineAuthor(author: string) {
+  const value = author.trim().toLowerCase();
+  return MACHINE_AUTHORS.has(value) || value.endsWith(" bot");
+}
+
+function isIgnoredVykazNote(text: string) {
+  const value = text.trim();
+  if (!value) return true;
+  if (value.startsWith("Stav zmenený")) return true;
+  if (value.startsWith("Archivované")) return true;
+  if (value.startsWith("Ticket vytvorený")) return true;
+  return false;
+}
+
+export function hasHumanResolutionNote(ticket: Ticket) {
+  return (ticket.notes ?? []).some((note) => {
+    if (isIgnoredVykazNote(note.text)) return false;
+    if (isMachineAuthor(note.author)) return false;
+    return true;
+  });
+}
+
+export function ticketLinkedToVyjazd(ticket: Ticket, vyjazdy: Vyjazd[]) {
+  return vyjazdy.some((v) => vyjazdTicketIds(v).has(ticket.id));
+}
+
+/** Manual tickets always qualify. Auto/Balena tickets only with real work. */
+export function ticketQualifiesForVykaz(ticket: Ticket, vyjazdy: Vyjazd[]) {
+  if (ticket.status !== "hotove") return false;
+  if ((ticket.source ?? "manual") !== "auto") return true;
+  return hasHumanResolutionNote(ticket) || ticketLinkedToVyjazd(ticket, vyjazdy);
 }
 
 export function autoVykazFromTicket(

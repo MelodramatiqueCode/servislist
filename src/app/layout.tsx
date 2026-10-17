@@ -46,7 +46,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Link href="/vyjazdy" className="btn btn-ghost">
                 Výjazdy
               </Link>
-              <Link href="/novy" className="btn btn-primary">
+              <Link href="/prevadzky/nova" className="btn btn-ghost whitespace-nowrap">
+                + Nová prevádzka
+              </Link>
+              <Link href="/novy" className="btn btn-primary whitespace-nowrap">
                 + Nový problém
               </Link>
             </nav>

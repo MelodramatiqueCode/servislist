@@ -25,6 +25,7 @@ import {
   filterVykaz,
   mergeVykazEntries,
   parseVykazType,
+  ticketQualifiesForVykaz,
   type VykazEntry,
   type VykazType,
 } from "./vykaz-prace";
@@ -731,7 +732,7 @@ export function autoVykazForStore(
 ) {
   const uuidSet = new Set(deviceUuids);
   const storeTickets = tickets.filter((t) => {
-    if (t.status !== "hotove") return false;
+    if (!ticketQualifiesForVykaz(t, vyjazdy)) return false;
     if (t.deviceUuid && uuidSet.has(t.deviceUuid)) return true;
     return ticketLooksLikeStore(t, store);
   });
