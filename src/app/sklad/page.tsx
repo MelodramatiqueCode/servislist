@@ -4,20 +4,26 @@ import { SKLAD_KATEGORIE } from "@/lib/sklad";
 import { skladSnapshot } from "@/lib/sklad-store";
 import { DlFileLink } from "@/components/dl-file-link";
 import { formatDate } from "@/lib/format";
+import { localMonthRange } from "@/lib/refs";
+import { StatCard } from "@/components/stat-card";
 
-type Search = Promise<{ q?: string; kat?: string; low?: string }>;
+type Search = Promise<{ q?: string; kat?: string; low?: string; reserved?: string }>;
 
 export default async function SkladPage({
   searchParams,
 }: {
   searchParams: Search;
 }) {
-  const { q = "", kat = "", low } = await searchParams;
+  const { q = "", kat = "", low, reserved } = await searchParams;
   const snap = await skladSnapshot();
   const onlyLow = low === "1";
+  const onlyReserved = reserved === "1";
+  const month = localMonthRange();
+  const prijmyHref = `/sklad/pohyby?typ=prijem&od=${month.from}&do=${month.to}`;
   const rows = snap.polozky.filter((p) => {
     if (kat && p.kategoria !== kat) return false;
     if (onlyLow && !p.low) return false;
+    if (onlyReserved && p.reserved <= 0) return false;
     if (q.trim()) {
       const hay = `${p.nazov} ${p.kod}`.toLowerCase();
       if (!hay.includes(q.trim().toLowerCase())) return false;
@@ -46,24 +52,24 @@ export default async function SkladPage({
       </div>
 
       <div className="grid gap-3 md:grid-cols-4">
-        <div className="stat">
+        <StatCard href="/sklad" className="stat" active={!onlyLow && !onlyReserved && !kat}>
           <span className="label">Položiek</span>
           <strong>{snap.stats.items}</strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href="/sklad?low=1" className="stat" active={onlyLow}>
           <span className="label">Pod min. stavom</span>
           <strong className={snap.stats.low ? "text-[var(--acc)]" : ""}>
             {snap.stats.low}
           </strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href="/sklad?reserved=1" className="stat" active={onlyReserved}>
           <span className="label">Rezervované na ticketoch</span>
           <strong>{snap.stats.reservedTickets}</strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href={prijmyHref} className="stat">
           <span className="label">Príjmy tento mesiac</span>
           <strong>{snap.stats.prijmyMonth}</strong>
-        </div>
+        </StatCard>
       </div>
 
       <div className="home-grid">
@@ -76,12 +82,14 @@ export default async function SkladPage({
               className="min-w-[200px] flex-1 rounded-xl border border-[var(--line)] px-3 py-2"
             />
             {kat ? <input type="hidden" name="kat" value={kat} /> : null}
+            {onlyLow ? <input type="hidden" name="low" value="1" /> : null}
+            {onlyReserved ? <input type="hidden" name="reserved" value="1" /> : null}
             <button className="btn btn-ghost" type="submit">
               Hľadať
             </button>
           </form>
           <div className="flex flex-wrap gap-2">
-            <Link href="/sklad" className="tab" data-on={!kat && !onlyLow}>
+            <Link href="/sklad" className="tab" data-on={!kat && !onlyLow && !onlyReserved}>
               Všetko
             </Link>
             {SKLAD_KATEGORIE.map((k) => (
@@ -96,6 +104,9 @@ export default async function SkladPage({
             ))}
             <Link href="/sklad?low=1" className="tab" data-on={onlyLow}>
               Nízky stav
+            </Link>
+            <Link href="/sklad?reserved=1" className="tab" data-on={onlyReserved}>
+              Rezervované
             </Link>
           </div>
           <table className="profile-table">

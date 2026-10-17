@@ -166,8 +166,14 @@ export default async function PrevadzkaDetailPage({
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Stat label="Otvorené tickety" value={String(detail.openTickets.length)} auto />
         <Stat
+          href="/"
+          label="Otvorené tickety"
+          value={String(detail.openTickets.length)}
+          auto
+        />
+        <Stat
+          href={detail.lastVyjazd ? `/vyjazdy/${detail.lastVyjazd.id}` : "/vyjazdy"}
           label="Posledný výjazd"
           value={
             detail.lastVyjazd
@@ -177,14 +183,14 @@ export default async function PrevadzkaDetailPage({
           hint={detail.lastVyjazd?.title}
           auto
         />
-        <Stat label="Výpadky 30 dní" value={`${detail.outages30}×`} auto />
-        <div className="stat">
+        <Stat href="/zariadenia?health=offline" label="Výpadky 30 dní" value={`${detail.outages30}×`} auto />
+        <Link href={`/prevadzky/${store.id}/upravit`} className="stat">
           <span className="label">Profil vyplnený</span>
           <strong>{detail.completeness.percent} %</strong>
           <div className="bar mt-2">
             <i style={{ width: `${detail.completeness.percent}%` }} />
           </div>
-        </div>
+        </Link>
       </div>
 
       <div className="profile-grid grid items-start gap-5 md:grid-cols-[1.35fr_0.85fr]">
@@ -676,25 +682,27 @@ function Section({
 }
 
 function Stat({
+  href,
   label,
   value,
   hint,
   auto,
 }: {
+  href: string;
   label: string;
   value: string;
   hint?: string;
   auto?: boolean;
 }) {
   return (
-    <div className="stat">
+    <Link href={href} className="stat">
       <span className="label">
         {label}
         {auto ? <span className="chip chip-sm chip-auto">auto</span> : null}
       </span>
       <strong>{value}</strong>
       {hint ? <span className="text-sm text-[var(--ink-soft)]">{hint}</span> : null}
-    </div>
+    </Link>
   );
 }
 

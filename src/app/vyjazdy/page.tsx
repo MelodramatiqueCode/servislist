@@ -6,7 +6,8 @@ import {
   vyjazdCode,
   vyjazdStatusClass,
 } from "@/lib/format";
-import { getVyjazdStats, listVyjazdy } from "@/lib/store";
+import { getVyjazdStats, listVyjazdy, vyjazdIsOverdue } from "@/lib/store";
+import { StatCard } from "@/components/stat-card";
 import {
   PRIORITY_LABELS,
   VYJAZD_STATUS_LABELS,
@@ -25,29 +26,31 @@ import {
 type SearchParams = Promise<{
   status?: string;
   q?: string;
+  overdue?: string;
 }>;
 
-const FILTERS: Array<{ key: VyjazdStatus | "vsetky"; label: string }> = [
+type VyjazdFilter = VyjazdStatus | "vsetky" | "plan";
+
+const FILTERS: Array<{ key: VyjazdFilter; label: string }> = [
   { key: "vsetky", label: "Všetky" },
+  { key: "plan", label: "V pláne" },
   { key: "naplanovany", label: "Naplánované" },
   { key: "prebieha", label: "Prebiehajú" },
   { key: "hotovy", label: "Hotové" },
   { key: "zruseny", label: "Zrušené" },
 ];
 
-function vyjazdyHref(opts: { status?: VyjazdStatus | "vsetky"; q?: string }) {
+function vyjazdyHref(opts: {
+  status?: VyjazdFilter;
+  q?: string;
+  overdue?: boolean;
+}) {
   const params = new URLSearchParams();
   if (opts.status && opts.status !== "vsetky") params.set("status", opts.status);
+  if (opts.overdue) params.set("overdue", "1");
   if (opts.q?.trim()) params.set("q", opts.q.trim());
   const qs = params.toString();
   return qs ? `/vyjazdy?${qs}` : "/vyjazdy";
-}
-
-function isOverdue(status: VyjazdStatus, scheduledAt: string) {
-  if (status !== "naplanovany" && status !== "prebieha") return false;
-  if (!scheduledAt) return false;
-  const t = new Date(scheduledAt).getTime();
-  return !Number.isNaN(t) && t < Date.now();
 }
 
 export default async function VyjazdyPage({
@@ -57,17 +60,19 @@ export default async function VyjazdyPage({
 }) {
   const params = await searchParams;
   const statusRaw = params.status;
-  const status: VyjazdStatus | "vsetky" =
+  const status: VyjazdFilter =
     statusRaw === "naplanovany" ||
     statusRaw === "prebieha" ||
     statusRaw === "hotovy" ||
-    statusRaw === "zruseny"
+    statusRaw === "zruseny" ||
+    statusRaw === "plan"
       ? statusRaw
       : "vsetky";
+  const overdue = params.overdue === "1";
   const q = params.q ?? "";
 
   const [vyjazdy, stats] = await Promise.all([
-    listVyjazdy({ status, q }),
+    listVyjazdy({ status, q, overdue }),
     getVyjazdStats(),
   ]);
 
@@ -98,28 +103,32 @@ export default async function VyjazdyPage({
         className="fade-up grid grid-cols-2 gap-3 md:grid-cols-5"
         style={{ animationDelay: "60ms" }}
       >
-        <div className="stat">
+        <StatCard href={vyjazdyHref({ q })} className="stat" active={status === "vsetky" && !overdue}>
           <span className="text-sm text-[var(--ink-soft)]">Celkom</span>
           <strong>{stats.total}</strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href={vyjazdyHref({ status: "naplanovany", q })} className="stat" active={status === "naplanovany"}>
           <span className="text-sm text-[var(--ink-soft)]">Naplánované</span>
           <strong>{stats.naplanovany}</strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href={vyjazdyHref({ status: "prebieha", q })} className="stat" active={status === "prebieha"}>
           <span className="text-sm text-[var(--ink-soft)]">Prebiehajú</span>
           <strong>{stats.prebieha}</strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href={vyjazdyHref({ status: "hotovy", q })} className="stat" active={status === "hotovy"}>
           <span className="text-sm text-[var(--ink-soft)]">Hotové</span>
           <strong>{stats.hotovy}</strong>
-        </div>
-        <div className="stat col-span-2 md:col-span-1">
+        </StatCard>
+        <StatCard
+          href={vyjazdyHref({ overdue: true, q })}
+          className="stat col-span-2 md:col-span-1"
+          active={overdue}
+        >
           <span className="text-sm text-[var(--ink-soft)]">Po termíne</span>
           <strong className={stats.overdue > 0 ? "text-[var(--danger)]" : ""}>
             {stats.overdue}
           </strong>
-        </div>
+        </StatCard>
       </section>
 
       <section
@@ -131,6 +140,7 @@ export default async function VyjazdyPage({
             {status !== "vsetky" ? (
               <input type="hidden" name="status" value={status} />
             ) : null}
+            {overdue ? <input type="hidden" name="overdue" value="1" /> : null}
             <div className="field grow">
               <label htmlFor="q" className="sr-only">
                 Hľadať
@@ -153,11 +163,18 @@ export default async function VyjazdyPage({
                 key={f.key}
                 href={vyjazdyHref({ status: f.key, q })}
                 className="filter-pill"
-                data-active={status === f.key}
+                data-active={status === f.key && !overdue}
               >
                 {f.label}
               </Link>
             ))}
+            <Link
+              href={overdue ? vyjazdyHref({ q }) : vyjazdyHref({ overdue: true, q })}
+              className="filter-pill"
+              data-active={overdue}
+            >
+              Po termíne{overdue ? " ×" : ""}
+            </Link>
           </div>
         </div>
 
@@ -211,7 +228,7 @@ export default async function VyjazdyPage({
                   </Link>
 
                   <div className="flex flex-wrap gap-2 md:justify-end">
-                    {isOverdue(v.status, v.scheduledAt) ? (
+                    {vyjazdIsOverdue(v.status, v.scheduledAt) ? (
                       <span className="chip chip-overdue">Po termíne</span>
                     ) : null}
                     <span className={`chip ${vyjazdStatusClass(v.status)}`}>

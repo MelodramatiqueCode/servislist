@@ -12,6 +12,7 @@ import {
 } from "@/lib/sklad-store";
 import { getPrevadzkaProfile, getTicket } from "@/lib/store";
 import { storeLabel } from "@/lib/prevadzka-store";
+import { StatCard } from "@/components/stat-card";
 
 export default async function SkladPolozkaPage({
   params,
@@ -71,30 +72,30 @@ export default async function SkladPolozkaPage({
       </div>
 
       <div className="grid gap-3 md:grid-cols-4">
-        <div className="stat">
+        <StatCard href={`/sklad/pohyby?polozka=${item.id}`} className="stat">
           <span className="label">Na sklade</span>
           <strong>
             {stock} {item.jednotka}
           </strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href="/sklad?reserved=1" className="stat">
           <span className="label">Rezervované</span>
           <strong>
             {reservedN} {item.jednotka}
           </strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href="/sklad" className="stat">
           <span className="label">Voľné</span>
           <strong>
             {stock - reservedN} {item.jednotka}
           </strong>
-        </div>
-        <div className="stat">
+        </StatCard>
+        <StatCard href="/sklad?low=1" className="stat">
           <span className="label">Min. stav</span>
           <strong>
             {item.minStav} {item.jednotka}
           </strong>
-        </div>
+        </StatCard>
       </div>
 
       <div className="home-grid">
