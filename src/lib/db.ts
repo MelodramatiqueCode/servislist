@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 
 export const SCHEMA_VERSION = "perf-1";
@@ -21,6 +22,14 @@ import {
   REDEPLOY_OFFLINE_ARCHIVE_NOTE_TEXT,
 } from "./ticket-archive";
 import { hydrateVyjazd } from "./vyjazd-stops";
+import {
+  KEEP_VYJAZD_NUMBER,
+  PURGE_OPEN_VYJAZDY_BACKUP_KEY,
+  PURGE_OPEN_VYJAZDY_IDS,
+  PURGE_OPEN_VYJAZDY_META_KEY,
+  purgeOpenVyjazdyAuditPopis,
+  shouldPurgeOpenVyjazd,
+} from "./vyjazd-purge";
 
 type Sql = NeonQueryFunction<false, false>;
 
@@ -67,7 +76,10 @@ export async function ensureSchema() {
       const versionRows = await sql`
         SELECT value FROM app_meta WHERE key = 'schema_version' LIMIT 1
       `;
-      if (String(versionRows[0]?.value ?? "") === SCHEMA_VERSION) return;
+      if (String(versionRows[0]?.value ?? "") === SCHEMA_VERSION) {
+        await deleteStaleOpenVyjazdyOnce(sql);
+        return;
+      }
       await sql`
         CREATE TABLE IF NOT EXISTS tickets (
           id TEXT PRIMARY KEY,
@@ -485,6 +497,7 @@ export async function ensureSchema() {
         VALUES ('schema_version', ${SCHEMA_VERSION})
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
       `;
+      await deleteStaleOpenVyjazdyOnce(sql);
     })().catch((error) => {
       schemaReady = null;
       throw error;
@@ -586,6 +599,115 @@ async function archiveRedeployOfflineTicketsOnce(sql: Sql) {
   await sql`
     INSERT INTO app_meta (key, value)
     VALUES (${REDEPLOY_OFFLINE_ARCHIVE_META_KEY}, ${String(rows.length)})
+    ON CONFLICT (key) DO NOTHING
+  `;
+}
+
+function jsonSafeRow(row: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    out[key] = value instanceof Date ? value.toISOString() : value;
+  }
+  return out;
+}
+
+/**
+ * Jednorazové, race-safe zmazanie 10 starých naplánovaných výjazdov.
+ * Tickety nesahe; V-0015 (hotovy) ostáva; záloha ide do app_meta.
+ */
+async function deleteStaleOpenVyjazdyOnce(sql: Sql) {
+  const existing = await getMeta(PURGE_OPEN_VYJAZDY_META_KEY);
+  if (existing !== "") return;
+
+  const idsCsv: string = PURGE_OPEN_VYJAZDY_IDS.join(",");
+  const keepNumber: number = KEEP_VYJAZD_NUMBER;
+  const rawRows = await sql`
+    SELECT *
+    FROM vyjazdy
+    WHERE id = ANY(string_to_array(${idsCsv}::text, ','))
+      AND status = 'naplanovany'
+      AND number <> ${keepNumber}
+  `;
+  const rows = rawRows
+    .map((row) => jsonSafeRow(row as Record<string, unknown>))
+    .filter((row) =>
+      shouldPurgeOpenVyjazd({
+        id: String(row.id),
+        number: Number(row.number),
+        status: String(row.status),
+      }),
+    );
+  const deleteIds = rows.map((row) => String(row.id));
+  const deleteCsv = deleteIds.join(",");
+
+  const vykazRows =
+    deleteIds.length === 0
+      ? []
+      : (
+          await sql`
+            SELECT *
+            FROM vykaz_prace
+            WHERE vyjazd_id = ANY(string_to_array(${deleteCsv}::text, ','))
+          `
+        ).map((row) => jsonSafeRow(row as Record<string, unknown>));
+
+  const backup = JSON.stringify({
+    at: new Date().toISOString(),
+    codes: rows.map((row) => `V-${String(row.number).padStart(4, "0")}`),
+    keep: "V-0015",
+    vyjazdy: rows,
+    vykaz: vykazRows,
+  });
+
+  await sql`
+    INSERT INTO app_meta (key, value)
+    VALUES (${PURGE_OPEN_VYJAZDY_BACKUP_KEY}, ${backup})
+    ON CONFLICT (key) DO NOTHING
+  `;
+
+  const deleted =
+    deleteIds.length === 0
+      ? []
+      : await sql`
+          DELETE FROM vyjazdy
+          WHERE id = ANY(string_to_array(${deleteCsv}::text, ','))
+            AND status = 'naplanovany'
+            AND number <> ${keepNumber}
+          RETURNING id, number
+        `;
+
+  if (vykazRows.length > 0) {
+    await sql`
+      DELETE FROM vykaz_prace
+      WHERE vyjazd_id = ANY(string_to_array(${deleteCsv}::text, ','))
+    `;
+  }
+
+  if (deleted.length > 0) {
+    const codes = deleted.map(
+      (row) => `V-${String((row as { number: number }).number).padStart(4, "0")}`,
+    );
+    const popis = purgeOpenVyjazdyAuditPopis(codes);
+    await sql`
+      INSERT INTO audit_log (
+        id, at, autor, typ, akcia, entity_id, popis, diff, request_id
+      ) VALUES (
+        ${randomUUID()},
+        NOW(),
+        'martin',
+        'vyjazd',
+        'delete',
+        ${codes.join(",")},
+        ${popis},
+        ${JSON.stringify({ ids: deleted.map((row) => String((row as { id: string }).id)) })}::jsonb,
+        'purge_open_vyjazdy_2026-10-17'
+      )
+    `;
+  }
+
+  await sql`
+    INSERT INTO app_meta (key, value)
+    VALUES (${PURGE_OPEN_VYJAZDY_META_KEY}, ${String(deleted.length)})
     ON CONFLICT (key) DO NOTHING
   `;
 }
