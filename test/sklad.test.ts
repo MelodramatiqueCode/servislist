@@ -4,11 +4,17 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import {
+  RPI_QTY_SPLIT_NOTE,
+  SKLAD_KATEGORIA_FALLBACK,
+  WAVESHARE_NOT_STOCK_NOTE,
   isLowStock,
+  isWaveshareNonStockItem,
+  itemMatchesKod,
   mapLegacyRpiCategory,
   normalizeName,
   parseKategoria,
   reservedQty,
+  rpiQtySplitDeltas,
   stockFromPohyby,
   toSqlTimestamptz,
   type SkladPohyb,
@@ -16,6 +22,7 @@ import {
 import type * as SkladStore from "../src/lib/sklad-store";
 import type * as MaterialStore from "../src/lib/material-store";
 import type * as Store from "../src/lib/store";
+import type * as KontrolaStore from "../src/lib/kontrola-store";
 
 const previous = {
   dataDir: process.env.SERVISLIST_DATA_DIR,
@@ -27,6 +34,7 @@ const previous = {
 let sklad: typeof SkladStore;
 let material: typeof MaterialStore;
 let tickets: typeof Store;
+let kontrola: typeof KontrolaStore;
 
 describe("sklad helpers", () => {
   test("stock is the signed sum of movements", () => {
@@ -99,6 +107,27 @@ describe("sklad helpers", () => {
     );
     assert.equal(mapLegacyRpiCategory("Raspberry Pi", "PI-RPI"), "Prehrávače (nešpecifikované)");
     assert.equal(mapLegacyRpiCategory("Napájací zdroj", "PI-PSU"), "Prehrávače (nešpecifikované)");
+    assert.equal(mapLegacyRpiCategory("RPi 4", "RPI401"), "RPi 4");
+    assert.equal(
+      mapLegacyRpiCategory("Zdroj USB-C (RPi 4)", "OFI045"),
+      "Zdroje RPi 4 (USB-C)",
+    );
+  });
+
+  test("Martin 17.10.2026 split moves 7+19 onto the four Zonepi SKUs", () => {
+    const deltas = rpiQtySplitDeltas();
+    assert.equal(deltas.get("PI-RPI"), -7);
+    assert.equal(deltas.get("PI-PSU"), -19);
+    assert.equal(deltas.get("RPI401"), 3);
+    assert.equal(deltas.get("RPI303"), 4);
+    assert.equal(deltas.get("OFI045"), 13);
+    assert.equal(deltas.get("OFI090"), 6);
+    assert.ok(
+      itemMatchesKod({ kod: "PI-RPI4", nazov: "RPi 4" }, "RPI401", "RPi 4"),
+    );
+    assert.ok(itemMatchesKod({ kod: "RPI401", nazov: "RPi 4" }, "PI-RPI4"));
+    assert.equal(isWaveshareNonStockItem("Waveshare 4\" displej", "WAV865"), true);
+    assert.equal(isWaveshareNonStockItem("SD karta", "SD-CARD"), false);
   });
 
   test("toSqlTimestamptz rejects JS Date.toString() as SQL input", () => {
@@ -128,6 +157,7 @@ describe("sklad store", () => {
     sklad = await import("../src/lib/sklad-store");
     material = await import("../src/lib/material-store");
     tickets = await import("../src/lib/store");
+    kontrola = await import("../src/lib/kontrola-store");
   });
 
   after(() => {
@@ -342,5 +372,75 @@ describe("sklad store", () => {
       2,
     );
     assert.equal(afterAgain.polozky.find((p) => p.id === sd.id)?.stock, stockSd + 4);
+  });
+
+  test("quantity split writes korekcia + audit, archives leftover SKUs, hides Waveshare", async () => {
+    await sklad.ensureSkladCatalog();
+    const rpi = await sklad.createPolozka({
+      kod: "PI-RPI",
+      nazov: "Raspberry Pi",
+      kategoria: SKLAD_KATEGORIA_FALLBACK,
+    });
+    const psu = await sklad.createPolozka({
+      kod: "PI-PSU",
+      nazov: "Napájací zdroj",
+      kategoria: SKLAD_KATEGORIA_FALLBACK,
+    });
+    const wave = await sklad.createPolozka({
+      kod: "WAV865",
+      nazov: "Waveshare 4\" displej",
+      kategoria: "Iné",
+    });
+    await sklad.addPohyb({ polozkaId: rpi.id, typ: "korekcia", mnozstvo: 7, kto: "Martin" });
+    await sklad.addPohyb({ polozkaId: psu.id, typ: "korekcia", mnozstvo: 19, kto: "Martin" });
+    await sklad.addPohyb({ polozkaId: wave.id, typ: "korekcia", mnozstvo: 1, kto: "Martin" });
+
+    const first = await sklad.ensureSkladCatalog();
+    const again = await sklad.ensureSkladCatalog();
+    const snap = await sklad.skladSnapshot();
+    const byKod = (kod: string) =>
+      snap.polozky.find((p) => p.kod === kod) ??
+      first.find((p) => p.kod === kod);
+
+    assert.equal(snap.polozky.find((p) => p.kod === "RPI401")?.stock, 3);
+    assert.equal(snap.polozky.find((p) => p.kod === "RPI303")?.stock, 4);
+    assert.equal(snap.polozky.find((p) => p.kod === "OFI045")?.stock, 13);
+    assert.equal(snap.polozky.find((p) => p.kod === "OFI090")?.stock, 6);
+    assert.equal(snap.polozky.some((p) => p.kod === "PI-RPI" || p.kod === "PI-PSU"), false);
+    assert.equal(snap.polozky.some((p) => p.kod === "WAV865"), false);
+
+    const archived = again.filter((p) => p.id === rpi.id || p.id === psu.id || p.id === wave.id);
+    assert.equal(archived.length, 3);
+    assert.ok(archived.every((p) => p.archivedAt));
+
+    const splitPohyby = snap.pohyby.filter((p) =>
+      ["from:rpi4", "to:rpi4", "from:rpi3", "to:rpi3", "from:psu4", "to:psu4", "from:psu3", "to:psu3"]
+        .map((k) => `split:2026-10-17:${k}`)
+        .includes(p.ticketMaterialId),
+    );
+    assert.equal(splitPohyby.length, 8);
+    const afterAgain = await sklad.listPohyby();
+    assert.equal(
+      afterAgain.filter((p) => p.ticketMaterialId.startsWith("split:2026-10-17:")).length,
+      splitPohyby.length + 1,
+    );
+
+    const audit = await kontrola.listAudit({ typ: "sklad" });
+    assert.ok(
+      audit.some(
+        (row) =>
+          row.autor === "martin" &&
+          row.popis.includes(RPI_QTY_SPLIT_NOTE) &&
+          row.akcia === "korekcia",
+      ),
+    );
+    assert.ok(
+      audit.some(
+        (row) =>
+          row.autor === "martin" &&
+          row.popis.includes(WAVESHARE_NOT_STOCK_NOTE),
+      ),
+    );
+    assert.equal(byKod("RPI401")?.kod, "RPI401");
   });
 });
