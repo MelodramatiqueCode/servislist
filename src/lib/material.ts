@@ -45,9 +45,9 @@ export function parseMaterialStatus(
 export function materialTemplate(jobType: JobType): MaterialInput[] {
   if (jobType === "spustenie_zariadenia") {
     return [
-      { item: "Raspberry Pi", quantity: 1, unit: "ks" },
+      { item: "RPi 4", quantity: 1, unit: "ks" },
       { item: "SD karta", quantity: 1, unit: "ks" },
-      { item: "Napájací zdroj", quantity: 1, unit: "ks" },
+      { item: "Zdroj USB-C (RPi 4)", quantity: 1, unit: "ks" },
       { item: "Tlačidlá", quantity: 2, unit: "ks" },
       { item: "Káble", quantity: 5, unit: "m" },
     ];
@@ -56,9 +56,9 @@ export function materialTemplate(jobType: JobType): MaterialInput[] {
     { item: "Reproduktory stropné", quantity: 8, unit: "ks" },
     { item: "Reproduktory nástenné", quantity: 2, unit: "ks" },
     { item: "Zosilňovač", quantity: 1, unit: "ks" },
-    { item: "Raspberry Pi", quantity: 1, unit: "ks" },
+    { item: "RPi 4", quantity: 1, unit: "ks" },
     { item: "SD karta", quantity: 1, unit: "ks" },
-    { item: "Napájací zdroj", quantity: 1, unit: "ks" },
+    { item: "Zdroj USB-C (RPi 4)", quantity: 1, unit: "ks" },
     { item: "Káble reproduktorové", quantity: 50, unit: "m" },
     { item: "Tlačidlá", quantity: 3, unit: "ks" },
     { item: "Držiaky / konzoly", quantity: 2, unit: "ks" },

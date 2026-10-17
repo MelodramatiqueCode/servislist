@@ -5,7 +5,9 @@ import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import {
   isLowStock,
+  mapLegacyRpiCategory,
   normalizeName,
+  parseKategoria,
   reservedQty,
   stockFromPohyby,
   toSqlTimestamptz,
@@ -80,6 +82,23 @@ describe("sklad helpers", () => {
     assert.equal(isLowStock(10, 6, 5), true);
     assert.equal(isLowStock(10, 2, 5), false);
     assert.equal(normalizeName("SD  karta"), "sd karta");
+  });
+
+  test("legacy Prehrávače/RPi maps by name and keeps old API value", () => {
+    assert.equal(parseKategoria("Prehrávače/RPi"), "Prehrávače (nešpecifikované)");
+    assert.equal(parseKategoria("RPi 4"), "RPi 4");
+    assert.equal(mapLegacyRpiCategory("RPi 4", "PI-RPI4"), "RPi 4");
+    assert.equal(mapLegacyRpiCategory("Raspberry Pi 3", ""), "RPi 3");
+    assert.equal(
+      mapLegacyRpiCategory("Zdroj USB-C (RPi 4)", "PI-PSU4"),
+      "Zdroje RPi 4 (USB-C)",
+    );
+    assert.equal(
+      mapLegacyRpiCategory("Napájací zdroj micro USB", ""),
+      "Zdroje RPi 3 (micro USB)",
+    );
+    assert.equal(mapLegacyRpiCategory("Raspberry Pi", "PI-RPI"), "Prehrávače (nešpecifikované)");
+    assert.equal(mapLegacyRpiCategory("Napájací zdroj", "PI-PSU"), "Prehrávače (nešpecifikované)");
   });
 
   test("toSqlTimestamptz rejects JS Date.toString() as SQL input", () => {

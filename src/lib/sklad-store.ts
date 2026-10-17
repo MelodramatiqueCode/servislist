@@ -6,6 +6,9 @@ import { listMaterial } from "./material-store";
 import { listTickets } from "./store";
 import {
   CATALOG_SEED,
+  RPI_STOCK_ITEMS,
+  mapLegacyRpiCategory,
+  needsLegacyRpiMigration,
   normalizeName,
   parseDlStav,
   parseJednotka,
@@ -142,13 +145,53 @@ function hydratePohyb(raw: Record<string, unknown>): SkladPohyb {
 }
 
 export async function ensureSkladCatalog() {
-  const existing = await listPolozky({ includeArchived: true });
-  if (existing.length > 0) return existing;
-  const created: SkladPolozka[] = [];
-  for (const row of CATALOG_SEED) {
-    created.push(await createPolozka(row));
+  let existing = await listPolozky({ includeArchived: true });
+  if (existing.length === 0) {
+    for (const row of CATALOG_SEED) {
+      await createPolozka(row);
+    }
+    existing = await listPolozky({ includeArchived: true });
   }
-  return created;
+  await ensureRpiSplit();
+  return listPolozky({ includeArchived: true });
+}
+
+async function ensureRpiSplit() {
+  if (isDatabaseConfigured()) {
+    const sql = getSql();
+    const rows = await sql`SELECT id, kod, nazov, kategoria FROM sklad_polozky`;
+    for (const row of rows) {
+      const kat = String((row as { kategoria: string }).kategoria ?? "");
+      if (!needsLegacyRpiMigration(kat)) continue;
+      const next = mapLegacyRpiCategory(
+        String((row as { nazov: string }).nazov ?? ""),
+        String((row as { kod: string }).kod ?? ""),
+      );
+      await sql`
+        UPDATE sklad_polozky SET kategoria = ${next}
+        WHERE id = ${(row as { id: string }).id}
+      `;
+    }
+  } else {
+    const blob = await readBlob();
+    let dirty = false;
+    for (const item of blob.polozky) {
+      if (!needsLegacyRpiMigration(item.kategoria)) continue;
+      item.kategoria = mapLegacyRpiCategory(item.nazov, item.kod);
+      dirty = true;
+    }
+    if (dirty) await writeBlob(blob);
+  }
+
+  const latest = await listPolozky({ includeArchived: true });
+  const haveKod = new Set(latest.map((p) => p.kod.trim().toUpperCase()));
+  const haveName = new Set(latest.map((p) => normalizeName(p.nazov)));
+  for (const row of RPI_STOCK_ITEMS) {
+    if (haveKod.has(row.kod) || haveName.has(normalizeName(row.nazov))) continue;
+    await createPolozka(row);
+    haveKod.add(row.kod);
+    haveName.add(normalizeName(row.nazov));
+  }
 }
 
 export async function listPolozky(opts?: {

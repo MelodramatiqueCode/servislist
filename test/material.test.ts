@@ -30,6 +30,12 @@ describe("material", () => {
     assert.ok(montaz.some((r) => /repro/i.test(r.item)));
     assert.ok(montaz.length > start.length);
     assert.ok(start.every((r) => r.item));
+    assert.ok(montaz.some((r) => r.item === "RPi 4"));
+    assert.ok(montaz.some((r) => r.item === "Zdroj USB-C (RPi 4)"));
+    assert.ok(start.some((r) => r.item === "RPi 4"));
+    assert.ok(start.some((r) => r.item === "Zdroj USB-C (RPi 4)"));
+    assert.ok(!montaz.some((r) => /raspberry pi$/i.test(r.item)));
+    assert.ok(!start.some((r) => r.item === "Napájací zdroj"));
   });
 
   test("total only when prices exist; summary prefers used items", () => {

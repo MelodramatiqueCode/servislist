@@ -425,7 +425,7 @@ curl -sS https://servislist.vercel.app/api/v1/sklad \
 
 ### `GET /api/v1/sklad/polozky` — katalóg
 
-Query: `q`, `kategoria` (`Reproduktory` \| `Zosilňovače` \| `Prehrávače/RPi` \| `SD karty` \| `Káble` \| `Tlačidlá` \| `Držiaky` \| `Iné`).
+Query: `q`, `kategoria` (`Reproduktory` \| `Zosilňovače` \| `RPi 4` \| `RPi 3` \| `Zdroje RPi 4 (USB-C)` \| `Zdroje RPi 3 (micro USB)` \| `Prehrávače (nešpecifikované)` \| `SD karty` \| `Káble` \| `Tlačidlá` \| `Držiaky` \| `Iné`). Stará hodnota `Prehrávače/RPi` sa stále prijme a mapuje na `Prehrávače (nešpecifikované)`.
 
 ```bash
 curl -sS "https://servislist.vercel.app/api/v1/sklad/polozky?kategoria=SD%20karty" \
