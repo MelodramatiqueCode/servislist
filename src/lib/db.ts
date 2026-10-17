@@ -14,6 +14,9 @@ import {
   ARCHIVE_NOTE_TEXT,
   LEGACY_AUTO_ARCHIVE_CUTOFF,
   LEGACY_AUTO_ARCHIVE_META_KEY,
+  REDEPLOY_OFFLINE_ARCHIVE_IDS,
+  REDEPLOY_OFFLINE_ARCHIVE_META_KEY,
+  REDEPLOY_OFFLINE_ARCHIVE_NOTE_TEXT,
 } from "./ticket-archive";
 import { hydrateVyjazd } from "./vyjazd-stops";
 
@@ -207,6 +210,7 @@ export async function ensureSchema() {
         )
       `;
       await archiveLegacyAutoTicketsOnce(sql);
+      await archiveRedeployOfflineTicketsOnce(sql);
     })().catch((error) => {
       schemaReady = null;
       throw error;
@@ -272,6 +276,43 @@ async function archiveLegacyAutoTicketsOnce(sql: Sql) {
       WHEN EXCLUDED.value ~ '^[0-9]+$' THEN EXCLUDED.value
       ELSE app_meta.value
     END
+  `;
+}
+
+/**
+ * Jednorazovo archivuje 14 duplicitných Offline auto ticketov z redeployu
+ * 2026-10-17T05:15:24Z. Len uvedené id, len source = 'auto'; nič nemaže.
+ */
+async function archiveRedeployOfflineTicketsOnce(sql: Sql) {
+  const existing = await getMeta(REDEPLOY_OFFLINE_ARCHIVE_META_KEY);
+  if (existing !== "") return;
+
+  const idsCsv: string = REDEPLOY_OFFLINE_ARCHIVE_IDS.join(",");
+  const noteText: string = REDEPLOY_OFFLINE_ARCHIVE_NOTE_TEXT;
+  const noteIdSuffix = "-archive-2026-10-17";
+  const rows = await sql`
+    UPDATE tickets
+    SET
+      archived_at = NOW(),
+      updated_at = NOW(),
+      notes = COALESCE(notes, '[]'::jsonb) || jsonb_build_array(
+        jsonb_build_object(
+          'id', id || (${noteIdSuffix}::text),
+          'text', ${noteText}::text,
+          'author', 'Automat',
+          'createdAt', to_char(timezone('utc', NOW()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+        )
+      )
+    WHERE source = 'auto'
+      AND id = ANY(string_to_array(${idsCsv}::text, ','))
+      AND archived_at IS NULL
+    RETURNING id
+  `;
+
+  await sql`
+    INSERT INTO app_meta (key, value)
+    VALUES (${REDEPLOY_OFFLINE_ARCHIVE_META_KEY}, ${String(rows.length)})
+    ON CONFLICT (key) DO NOTHING
   `;
 }
 
@@ -383,7 +424,7 @@ export async function dbWriteTicketStore(store: TicketStore) {
         notes = EXCLUDED.notes,
         source = EXCLUDED.source,
         alert_type = EXCLUDED.alert_type,
-        archived_at = EXCLUDED.archived_at,
+        archived_at = COALESCE(EXCLUDED.archived_at, tickets.archived_at),
         client_ref = EXCLUDED.client_ref,
         updated_at = EXCLUDED.updated_at
     `;

@@ -12,6 +12,30 @@ export const LEGACY_AUTO_ARCHIVE_CUTOFF = "2026-10-16T23:59:59.000Z";
 /** `app_meta` kľúč. Prítomnosť = migrácia už prebehla; value = počet archivovaných. */
 export const LEGACY_AUTO_ARCHIVE_META_KEY = "archive_auto_before_2026-10-16";
 
+export const REDEPLOY_OFFLINE_ARCHIVE_NOTE_TEXT =
+  "Archivované: duplicitný Offline ticket vytvorený pri redeployi 17. 10. 2026 (zariadenie bolo offline už predtým, pôvodný ticket je v archíve). Ticket ostáva, nie je zmazaný.";
+
+/** `app_meta` kľúč jednorazovej archivácie 14 Offline ticketov z 2026-10-17T05:15:24Z. */
+export const REDEPLOY_OFFLINE_ARCHIVE_META_KEY = "archive_auto_offline_2026-10-17";
+
+/** Presne týchto 14 auto ticketov (source = auto) — nič iné sa nearchivuje. */
+export const REDEPLOY_OFFLINE_ARCHIVE_IDS: readonly string[] = [
+  "02610142-d076-4f22-9e5c-91eb02031399",
+  "e1e10910-3432-441a-9231-85d209f2a2ae",
+  "2364d920-f08a-487e-9195-e7ae36d6597d",
+  "9181b19d-2362-4f66-af8c-57be0dae2559",
+  "70267eca-f97f-4587-9990-2df7edb810f2",
+  "888f5517-38ba-4077-8115-1374b14a26c9",
+  "2a06a385-f709-45cc-82f5-43313ffc72ee",
+  "04028114-023e-4ab6-a4a3-8e70fd4564b4",
+  "3d835dbd-b59b-4bd3-a5c7-63354b891a41",
+  "5443a6e7-fe0d-4200-b852-acdc407f64d5",
+  "47d5bb3d-3c0d-49be-a867-07d79a127775",
+  "cedc6278-8b18-4340-8126-95c052cf1cf3",
+  "ab08db29-0610-4131-800a-b2ac3939c90a",
+  "05b398f0-1e99-4f66-bd15-ce910a22bb86",
+];
+
 export function mergeLegacyArchiveCounts(existing: string, incoming: string) {
   const a = Number.parseInt(existing, 10);
   const b = Number.parseInt(incoming, 10);

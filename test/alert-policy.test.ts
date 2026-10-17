@@ -7,7 +7,7 @@ import type { AlertPending, DeviceEvent, ServiceDevice, TicketStore } from "../s
 function device(partial: Partial<ServiceDevice> & { uuid: string }): ServiceDevice {
   return {
     balenaId: 1,
-    name: partial.name ?? partial.uuid,
+    name: partial.name ?? `${partial.code || "0"}-${partial.uuid}`,
     code: partial.code ?? "",
     partner: partial.partner ?? "COOP",
     city: partial.city ?? "Martin",

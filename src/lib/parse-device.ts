@@ -1,4 +1,5 @@
 import { getAlertConfig } from "./alert-config";
+import { isLongOffline, isTestDevice } from "./alert-suppress";
 import type { BalenaDeviceRaw, ServiceDevice } from "./types";
 
 const PHONE_RE =
@@ -210,7 +211,9 @@ export type DeviceHealthFilter =
   | "hot"
   | "disk"
   | "alerts"
-  | "vpn_down";
+  | "vpn_down"
+  | "long_offline"
+  | "test";
 
 export function matchesHealthFilter(
   device: ServiceDevice,
@@ -233,7 +236,18 @@ export function matchesHealthFilter(
       return hasHealthAlert(device);
     case "vpn_down":
       return device.isOnline && !device.isConnectedToVpn;
+    case "long_offline":
+      return isLongOfflineDevice(device);
+    case "test":
+      return isTestDevice(device, getAlertConfig().ignoreDevices);
     default:
       return true;
   }
+}
+
+/** Dlhodobo offline (Balena last-seen > ALERT_LONG_OFFLINE_DAYS), bez testovacích. */
+export function isLongOfflineDevice(device: ServiceDevice, now = new Date()) {
+  const config = getAlertConfig();
+  if (isTestDevice(device, config.ignoreDevices)) return false;
+  return isLongOffline(device, now, config.longOfflineDays);
 }
