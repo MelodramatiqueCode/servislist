@@ -12,11 +12,7 @@ import {
   isHot,
   type DeviceHealthFilter,
 } from "@/lib/parse-device";
-import {
-  ensureFreshBalenaSync,
-  getDeviceStats,
-  listDevices,
-} from "@/lib/store";
+import { getDeviceStats, listDevices } from "@/lib/store";
 
 type SearchParams = Promise<{
   q?: string;
@@ -69,8 +65,6 @@ export default async function DevicesPage({
   const params = await searchParams;
   const q = params.q ?? "";
   const health = parseHealth(params);
-
-  await ensureFreshBalenaSync();
 
   const [devices, stats] = await Promise.all([
     listDevices({ q, health }),
