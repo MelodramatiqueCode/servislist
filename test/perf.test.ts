@@ -52,6 +52,12 @@ describe("perf helpers", () => {
     assert.deepEqual(cfg.regions, ["fra1"]);
   });
 
+  test("balena cron path does not include force=1", () => {
+    const raw = readFileSync(new URL("../vercel.json", import.meta.url), "utf8");
+    const cfg = JSON.parse(raw) as { crons?: Array<{ path: string }> };
+    assert.equal(cfg.crons?.[0]?.path, "/api/sync-balena");
+  });
+
   test("matchDevicesForPrevadzka prefers linked uuids over store-key fallback", () => {
     const store = {
       id: "s1",

@@ -2,7 +2,7 @@
   "regions": ["fra1"],
   "crons": [
     {
-      "path": "/api/sync-balena?force=1",
+      "path": "/api/sync-balena",
       "schedule": "*/5 * * * *"
     }
   ]

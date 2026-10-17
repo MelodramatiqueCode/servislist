@@ -266,10 +266,13 @@ export async function listAudit(opts?: {
   return items.slice(0, opts?.limit ?? 200);
 }
 
-export async function recordSyncRun(input: Omit<SyncRun, "id">) {
+export async function recordSyncRun(
+  input: Omit<SyncRun, "id"> & { silent?: boolean },
+) {
   try {
     await ensure();
-    const row: SyncRun = { ...input, id: randomUUID() };
+    const { silent, ...rest } = input;
+    const row: SyncRun = { ...rest, id: randomUUID() };
     if (isDatabaseConfigured()) {
       const sql = getSql();
       await sql`
@@ -289,14 +292,16 @@ export async function recordSyncRun(input: Omit<SyncRun, "id">) {
       blob.syncRuns = blob.syncRuns.slice(0, 400);
       await writeBlob(blob);
     }
-    await writeAudit({
-      autor: "automatika",
-      typ: "nastavenia",
-      akcia: row.ok ? "sync" : "sync_error",
-      popis: row.ok
-        ? `Balena sync · online ${row.devicesOnline} · offline ${row.devicesOffline}`
-        : `Balena sync zlyhal: ${row.error}`,
-    });
+    if (!silent) {
+      await writeAudit({
+        autor: "automatika",
+        typ: "nastavenia",
+        akcia: row.ok ? "sync" : "sync_error",
+        popis: row.ok
+          ? `Balena sync · online ${row.devicesOnline} · offline ${row.devicesOffline}`
+          : `Balena sync zlyhal: ${row.error}`,
+      });
+    }
     return row;
   } catch {
     return null;

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { syncFromBalenaCloud } from "@/lib/store";
 
+export const maxDuration = 90;
+
 function authorizeCron(request: Request) {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) return true;

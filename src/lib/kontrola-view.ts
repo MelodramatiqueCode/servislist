@@ -22,6 +22,7 @@ import {
   storeLabel,
 } from "./prevadzka-store";
 import { listDodacieListy, skladSnapshot } from "./sklad-store";
+import { KONTROLA_SYNC_OK_MINUTES } from "./balena-sync-policy";
 import { getDeviceStats } from "./store";
 
 export type ApprovalItem = {
@@ -77,7 +78,10 @@ export async function kontrolaSnapshot() {
 
   const lastSyncAt = sync?.finishedAt || devices.syncedAt;
   const syncAge = minutesAgo(lastSyncAt, now);
-  const syncOk = Boolean(lastSyncAt) && syncAge <= 15 && (sync ? sync.ok : !devices.lastSyncError);
+  const syncOk =
+    Boolean(lastSyncAt) &&
+    syncAge <= KONTROLA_SYNC_OK_MINUTES &&
+    (sync ? sync.ok : !devices.lastSyncError);
 
   const todayRequests = requests.filter((r) => isSameLocalDay(r.at, now));
   const avgMs =

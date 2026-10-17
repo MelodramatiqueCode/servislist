@@ -96,6 +96,8 @@ import {
 } from "./prevadzka-profile";
 import { materialTemplate, type MaterialInput } from "./material";
 import { replaceMaterial } from "./material-store";
+import { BALENA_FULL_REFRESH_MS } from "./balena-sync-policy";
+import { acquireSyncLease, releaseSyncLease } from "./sync-lease";
 
 function dataDir() {
   return (
@@ -116,7 +118,7 @@ function vyjazdyFile() {
   return path.join(dataDir(), "vyjazdy.json");
 }
 
-const STALE_MS = 2 * 60 * 1000;
+const STALE_MS = BALENA_FULL_REFRESH_MS;
 
 const OPEN_STATUSES: TicketStatus[] = ["otvorene", "v_rieseni", "caka_diely"];
 
@@ -346,6 +348,8 @@ export type SyncResult = {
   syncedAt: string;
   error?: string;
   configured: boolean;
+  cached?: boolean;
+  skipped?: "in_progress";
 };
 
 export async function reconcileDeviceAlerts(
@@ -448,6 +452,7 @@ async function recordSyncRunSafe(startedAt: string, result: SyncResult) {
       ticketsOpened: result.alertsCreated,
       ticketsClosed: result.alertsResolved,
       error: result.error || "",
+      silent: Boolean(result.cached || result.skipped),
     });
     if (!result.ok && result.error) {
       await captureAppError({
@@ -498,8 +503,28 @@ async function runBalenaSync(options?: {
         alertsCreated: 0,
         alertsResolved: 0,
         syncedAt: existing.syncedAt,
+        cached: true,
       };
     }
+  }
+
+  const holder = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const leased = await acquireSyncLease(holder);
+  if (!leased) {
+    const online = existing.devices.filter((d) => d.isOnline).length;
+    return {
+      ok: true,
+      configured: true,
+      count: existing.devices.length,
+      online,
+      offline: existing.devices.length - online,
+      added: 0,
+      updated: 0,
+      alertsCreated: 0,
+      alertsResolved: 0,
+      syncedAt: existing.syncedAt || "",
+      skipped: "in_progress",
+    };
   }
 
   try {
@@ -588,6 +613,8 @@ async function runBalenaSync(options?: {
       syncedAt: store.syncedAt || "",
       error: message,
     };
+  } finally {
+    await releaseSyncLease(holder);
   }
 }
 

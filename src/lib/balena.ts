@@ -1,6 +1,11 @@
+import {
+  BALENA_FETCH_TIMEOUT_MS,
+  BALENA_PAGE_SIZE,
+} from "./balena-sync-policy";
 import type { BalenaDeviceRaw } from "./types";
 
 const API_BASE = "https://api.balena-cloud.com/v7";
+let fleetIdCache: { slug: string; id: number } | null = null;
 
 export type BalenaConfig = {
   token: string;
@@ -68,17 +73,31 @@ function expandSlug(
   return value.slug ?? "";
 }
 
-async function balenaFetch<T>(
+export async function balenaFetch<T>(
   path: string,
   token: string,
+  timeoutMs = BALENA_FETCH_TIMEOUT_MS,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`Balena API timeout po ${timeoutMs} ms: ${path}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -113,8 +132,12 @@ export async function fetchBalenaFleetDevices(
     throw new Error("Chýba BALENA_API_TOKEN.");
   }
 
-  const fleetId = await resolveFleetId(config.token, config.fleetSlug);
-  const pageSize = 200;
+  const fleetId =
+    fleetIdCache?.slug === config.fleetSlug
+      ? fleetIdCache.id
+      : await resolveFleetId(config.token, config.fleetSlug);
+  fleetIdCache = { slug: config.fleetSlug, id: fleetId };
+  const pageSize = BALENA_PAGE_SIZE;
   let skip = 0;
   const all: BalenaDeviceRaw[] = [];
 
