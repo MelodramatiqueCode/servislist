@@ -6,7 +6,13 @@ import { listMaterial } from "./material-store";
 import { listTickets } from "./store";
 import {
   CATALOG_SEED,
+  RPI_QTY_SPLIT_AUTHOR,
+  RPI_QTY_SPLIT_NOTE,
+  RPI_QTY_SPLIT_TRANSFERS,
   RPI_STOCK_ITEMS,
+  WAVESHARE_NOT_STOCK_NOTE,
+  isWaveshareNonStockItem,
+  itemMatchesKod,
   mapLegacyRpiCategory,
   needsLegacyRpiMigration,
   normalizeName,
@@ -153,6 +159,7 @@ export async function ensureSkladCatalog() {
     existing = await listPolozky({ includeArchived: true });
   }
   await ensureRpiSplit();
+  await ensureRpiQuantitySplit();
   return listPolozky({ includeArchived: true });
 }
 
@@ -187,11 +194,126 @@ async function ensureRpiSplit() {
   const haveKod = new Set(latest.map((p) => p.kod.trim().toUpperCase()));
   const haveName = new Set(latest.map((p) => normalizeName(p.nazov)));
   for (const row of RPI_STOCK_ITEMS) {
-    if (haveKod.has(row.kod) || haveName.has(normalizeName(row.nazov))) continue;
-    await createPolozka(row);
+    const known = [row.kod, ...row.legacyKody].some((kod) => haveKod.has(kod));
+    if (known || haveName.has(normalizeName(row.nazov))) continue;
+    await createPolozka({
+      kod: row.kod,
+      nazov: row.nazov,
+      kategoria: row.kategoria,
+      jednotka: row.jednotka,
+      minStav: row.minStav,
+    });
     haveKod.add(row.kod);
     haveName.add(normalizeName(row.nazov));
   }
+}
+
+function splitIdempotencyKey(kind: "from" | "to" | "waveshare", key: string) {
+  return `split:2026-10-17:${kind}:${key}`;
+}
+
+async function findByKodOrName(kod: string, nazov?: string) {
+  const all = await listPolozky({ includeArchived: true });
+  return all.find((p) => itemMatchesKod(p, kod, nazov)) ?? null;
+}
+
+async function applySupplierCodes() {
+  const all = await listPolozky({ includeArchived: true });
+  for (const row of RPI_STOCK_ITEMS) {
+    const current =
+      all.find((p) => itemMatchesKod(p, row.kod, row.nazov)) ?? null;
+    if (!current || current.kod.trim().toUpperCase() === row.kod) continue;
+    await updatePolozka(current.id, { kod: row.kod });
+    current.kod = row.kod;
+  }
+}
+
+async function hideWaveshareIfPresent() {
+  const items = await listPolozky({ includeArchived: true });
+  const waveshare = items.filter((p) => isWaveshareNonStockItem(p.nazov, p.kod));
+  const pohyby = await listPohyby();
+  for (const item of waveshare) {
+    const stock = stockFromPohyby(pohyby, item.id);
+    if (stock !== 0) {
+      await addPohyb({
+        polozkaId: item.id,
+        typ: "korekcia",
+        mnozstvo: -stock,
+        kto: RPI_QTY_SPLIT_AUTHOR,
+        poznamka: WAVESHARE_NOT_STOCK_NOTE,
+        ticketMaterialId: splitIdempotencyKey("waveshare", item.id),
+      });
+    }
+    if (!item.archivedAt) {
+      await archivePolozka(item.id);
+      try {
+        const { writeAudit } = await import("./kontrola-store");
+        await writeAudit({
+          autor: RPI_QTY_SPLIT_AUTHOR,
+          typ: "sklad",
+          akcia: "archiv",
+          entityId: item.id,
+          popis: `${WAVESHARE_NOT_STOCK_NOTE} · ${item.kod || item.nazov}`,
+        });
+      } catch {
+        /* audit must never break a mutation */
+      }
+    }
+  }
+}
+
+export async function ensureRpiQuantitySplit() {
+  await applySupplierCodes();
+
+  const items = await listPolozky({ includeArchived: true });
+  for (const transfer of RPI_QTY_SPLIT_TRANSFERS) {
+    const from = items.find((p) => itemMatchesKod(p, transfer.fromKod));
+    const to =
+      items.find((p) => itemMatchesKod(p, transfer.toKod, transfer.toNazov)) ??
+      (await findByKodOrName(transfer.toKod, transfer.toNazov));
+    if (!from || !to) continue;
+    const fromStock = stockFromPohyby(await listPohyby(), from.id);
+    if (fromStock < transfer.qty) continue;
+    await addPohyb({
+      polozkaId: from.id,
+      typ: "korekcia",
+      mnozstvo: -transfer.qty,
+      kto: RPI_QTY_SPLIT_AUTHOR,
+      poznamka: RPI_QTY_SPLIT_NOTE,
+      ticketMaterialId: splitIdempotencyKey("from", transfer.key),
+    });
+    await addPohyb({
+      polozkaId: to.id,
+      typ: "korekcia",
+      mnozstvo: transfer.qty,
+      kto: RPI_QTY_SPLIT_AUTHOR,
+      poznamka: RPI_QTY_SPLIT_NOTE,
+      ticketMaterialId: splitIdempotencyKey("to", transfer.key),
+    });
+  }
+
+  const after = await listPohyby();
+  const latest = await listPolozky({ includeArchived: true });
+  for (const kod of ["PI-RPI", "PI-PSU"]) {
+    const item = latest.find((p) => itemMatchesKod(p, kod));
+    if (!item || item.archivedAt) continue;
+    if (stockFromPohyby(after, item.id) !== 0) continue;
+    await archivePolozka(item.id);
+    try {
+      const { writeAudit } = await import("./kontrola-store");
+      await writeAudit({
+        autor: RPI_QTY_SPLIT_AUTHOR,
+        typ: "sklad",
+        akcia: "archiv",
+        entityId: item.id,
+        popis: `${RPI_QTY_SPLIT_NOTE} · ${item.kod} skryté z predvoleného zoznamu`,
+      });
+    } catch {
+      /* audit must never break a mutation */
+    }
+  }
+
+  await hideWaveshareIfPresent();
 }
 
 export async function listPolozky(opts?: {
@@ -312,6 +434,28 @@ export async function updatePolozka(
   return next;
 }
 
+export async function archivePolozka(id: string, at = nowIso()) {
+  const current = await getPolozka(id);
+  if (!current) return null;
+  if (current.archivedAt) return current;
+  const archivedAt = toSqlTimestamptz(at);
+  if (isDatabaseConfigured()) {
+    const sql = getSql();
+    await sql`
+      UPDATE sklad_polozky
+      SET archived_at = ${archivedAt}::timestamptz
+      WHERE id = ${id} AND archived_at IS NULL
+    `;
+  } else {
+    const blob = await readBlob();
+    blob.polozky = blob.polozky.map((p) =>
+      p.id === id && !p.archivedAt ? { ...p, archivedAt } : p,
+    );
+    await writeBlob(blob);
+  }
+  return { ...current, archivedAt };
+}
+
 export async function listPohyby(opts?: {
   polozkaId?: string;
   typ?: PohybTyp;
@@ -351,6 +495,7 @@ export async function addPohyb(input: {
   ticketMaterialId?: string;
   datum?: string;
   kto?: string;
+  poznamka?: string;
 }): Promise<SkladPohyb | null> {
   await ensureSchemaIfNeeded();
   if (input.ticketMaterialId) {
@@ -408,12 +553,14 @@ export async function addPohyb(input: {
   }
   try {
     const { writeAudit } = await import("./kontrola-store");
+    const qtyLabel = row.mnozstvo > 0 ? `+${row.mnozstvo}` : String(row.mnozstvo);
+    const note = input.poznamka?.trim();
     await writeAudit({
       autor: row.kto,
       typ: "sklad",
       akcia: row.typ,
       entityId: row.polozkaId,
-      popis: `${row.typ} ${row.mnozstvo > 0 ? `+${row.mnozstvo}` : row.mnozstvo}`,
+      popis: note ? `${note} · ${row.typ} ${qtyLabel}` : `${row.typ} ${qtyLabel}`,
     });
   } catch {
     /* audit must never break a mutation */

@@ -86,10 +86,10 @@ export const CATALOG_SEED: Array<
   { kod: "RP-STR65", nazov: "Reproduktory stropné", kategoria: "Reproduktory", jednotka: "ks", minStav: 10 },
   { kod: "RP-BOX5", nazov: "Reproduktory nástenné", kategoria: "Reproduktory", jednotka: "ks", minStav: 4 },
   { kod: "ZS-AMP", nazov: "Zosilňovač", kategoria: "Zosilňovače", jednotka: "ks", minStav: 2 },
-  { kod: "PI-RPI4", nazov: "RPi 4", kategoria: "RPi 4", jednotka: "ks", minStav: 2 },
-  { kod: "PI-RPI3", nazov: "RPi 3", kategoria: "RPi 3", jednotka: "ks", minStav: 2 },
-  { kod: "PI-PSU4", nazov: "Zdroj USB-C (RPi 4)", kategoria: "Zdroje RPi 4 (USB-C)", jednotka: "ks", minStav: 2 },
-  { kod: "PI-PSU3", nazov: "Zdroj micro USB (RPi 3)", kategoria: "Zdroje RPi 3 (micro USB)", jednotka: "ks", minStav: 2 },
+  { kod: "RPI401", nazov: "RPi 4", kategoria: "RPi 4", jednotka: "ks", minStav: 2 },
+  { kod: "RPI303", nazov: "RPi 3", kategoria: "RPi 3", jednotka: "ks", minStav: 2 },
+  { kod: "OFI045", nazov: "Zdroj USB-C (RPi 4)", kategoria: "Zdroje RPi 4 (USB-C)", jednotka: "ks", minStav: 2 },
+  { kod: "OFI090", nazov: "Zdroj micro USB (RPi 3)", kategoria: "Zdroje RPi 3 (micro USB)", jednotka: "ks", minStav: 2 },
   { kod: "SD-CARD", nazov: "SD karta", kategoria: "SD karty", jednotka: "ks", minStav: 10 },
   { kod: "KB-REPRO", nazov: "Káble reproduktorové", kategoria: "Káble", jednotka: "m", minStav: 100 },
   { kod: "KB-CAB", nazov: "Káble", kategoria: "Káble", jednotka: "m", minStav: 20 },
@@ -106,11 +106,94 @@ export function parseKategoria(raw: string | undefined | null): SkladKategoria |
 }
 
 export const RPI_STOCK_ITEMS = [
-  { kod: "PI-RPI4", nazov: "RPi 4", kategoria: "RPi 4" as SkladKategoria, jednotka: "ks" as const, minStav: 2 },
-  { kod: "PI-RPI3", nazov: "RPi 3", kategoria: "RPi 3" as SkladKategoria, jednotka: "ks" as const, minStav: 2 },
-  { kod: "PI-PSU4", nazov: "Zdroj USB-C (RPi 4)", kategoria: "Zdroje RPi 4 (USB-C)" as SkladKategoria, jednotka: "ks" as const, minStav: 2 },
-  { kod: "PI-PSU3", nazov: "Zdroj micro USB (RPi 3)", kategoria: "Zdroje RPi 3 (micro USB)" as SkladKategoria, jednotka: "ks" as const, minStav: 2 },
+  {
+    kod: "RPI401",
+    legacyKody: ["PI-RPI4"] as const,
+    nazov: "RPi 4",
+    kategoria: "RPi 4" as SkladKategoria,
+    jednotka: "ks" as const,
+    minStav: 2,
+  },
+  {
+    kod: "RPI303",
+    legacyKody: ["PI-RPI3"] as const,
+    nazov: "RPi 3",
+    kategoria: "RPi 3" as SkladKategoria,
+    jednotka: "ks" as const,
+    minStav: 2,
+  },
+  {
+    kod: "OFI045",
+    legacyKody: ["PI-PSU4"] as const,
+    nazov: "Zdroj USB-C (RPi 4)",
+    kategoria: "Zdroje RPi 4 (USB-C)" as SkladKategoria,
+    jednotka: "ks" as const,
+    minStav: 2,
+  },
+  {
+    kod: "OFI090",
+    legacyKody: ["PI-PSU3"] as const,
+    nazov: "Zdroj micro USB (RPi 3)",
+    kategoria: "Zdroje RPi 3 (micro USB)" as SkladKategoria,
+    jednotka: "ks" as const,
+    minStav: 2,
+  },
 ] as const;
+
+export const RPI_QTY_SPLIT_NOTE = "Rozdelenie podľa Martina 17.10.2026";
+export const RPI_QTY_SPLIT_AUTHOR = "Martin";
+export const RPI_QTY_SPLIT_META_KEY = "rpi_qty_split_2026-10-17";
+export const WAVESHARE_NOT_STOCK_NOTE = "Nie je skladová položka – Martin 17.10.2026";
+
+export type RpiQtySplitTransfer = {
+  key: string;
+  fromKod: string;
+  toKod: string;
+  toNazov: string;
+  qty: number;
+};
+
+/** Martin 17.10.2026 — Zonepi faktúra 202638910 / order 727137. */
+export const RPI_QTY_SPLIT_TRANSFERS: readonly RpiQtySplitTransfer[] = [
+  { key: "rpi4", fromKod: "PI-RPI", toKod: "RPI401", toNazov: "RPi 4", qty: 3 },
+  { key: "rpi3", fromKod: "PI-RPI", toKod: "RPI303", toNazov: "RPi 3", qty: 4 },
+  { key: "psu4", fromKod: "PI-PSU", toKod: "OFI045", toNazov: "Zdroj USB-C (RPi 4)", qty: 13 },
+  { key: "psu3", fromKod: "PI-PSU", toKod: "OFI090", toNazov: "Zdroj micro USB (RPi 3)", qty: 6 },
+];
+
+export function rpiQtySplitDeltas(
+  transfers: readonly RpiQtySplitTransfer[] = RPI_QTY_SPLIT_TRANSFERS,
+) {
+  const deltas = new Map<string, number>();
+  for (const row of transfers) {
+    deltas.set(row.fromKod, (deltas.get(row.fromKod) ?? 0) - row.qty);
+    deltas.set(row.toKod, (deltas.get(row.toKod) ?? 0) + row.qty);
+  }
+  return deltas;
+}
+
+export function itemMatchesKod(
+  item: Pick<SkladPolozka, "kod" | "nazov">,
+  kod: string,
+  nazov?: string,
+) {
+  const needle = kod.trim().toUpperCase();
+  const aliases = new Set<string>([needle]);
+  for (const row of RPI_STOCK_ITEMS) {
+    if (row.kod === needle || (row.legacyKody as readonly string[]).includes(needle)) {
+      aliases.add(row.kod);
+      for (const legacy of row.legacyKody) aliases.add(legacy);
+    }
+  }
+  if (aliases.has(item.kod.trim().toUpperCase())) return true;
+  return Boolean(nazov && normalizeName(item.nazov) === normalizeName(nazov));
+}
+
+export function isWaveshareNonStockItem(nazov: string, kod = "") {
+  const hay = normalizeName(`${nazov} ${kod}`);
+  if (/\b(waveshare|wav865)\b/.test(hay)) return true;
+  return /\bdisplej\b/.test(hay) && /\bdsi\b/.test(hay);
+}
 
 /** Map old Prehrávače/RPi rows by name. Ambiguous names stay in the fallback. */
 export function mapLegacyRpiCategory(
