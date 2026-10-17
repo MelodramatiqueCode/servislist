@@ -399,6 +399,70 @@ curl -sS -X DELETE https://servislist.vercel.app/api/v1/tickets/12/material/ITEM
 
 Stavy materiálu: `planovane` \| `pouzite`. Ticket montáže/spustenia pri uzavretí zapíše výkaz (montáž alebo spustenie) vrátane použitého materiálu.
 
+Uzavretie ticketu s materiálom `pouzite` zapíše **výdaj** na sklad (idempotentne podľa `ticket_material_id`). Ceny v sklade nie sú.
+
+---
+
+## Sklad
+
+Žiadne ceny. Stav položky = súčet pohybov. Rezervované = plánovaný materiál na otvorených ticketoch. Príjem od bota ide vždy ako **čakajúci** — Martin ho schváli v appke (`/sklad`).
+
+### `GET /api/v1/sklad` — prehľad
+
+```bash
+curl -sS https://servislist.vercel.app/api/v1/sklad \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "stats": { "items": 10, "low": 2, "reservedTickets": 1, "prijmyMonth": 0 },
+  "low": [{ "id": "…", "kod": "SD-CARD", "nazov": "SD karta", "stock": 3, "reserved": 1, "free": 2, "minStav": 10, "low": true }],
+  "pending": [{ "id": "…", "cisloDl": "DL-2026/10-0187", "stav": "cakajuci", "zdroj": "servis_bot" }],
+  "recent": []
+}
+```
+
+### `GET /api/v1/sklad/polozky` — katalóg
+
+Query: `q`, `kategoria` (`Reproduktory` \| `Zosilňovače` \| `Prehrávače/RPi` \| `SD karty` \| `Káble` \| `Tlačidlá` \| `Držiaky` \| `Iné`).
+
+```bash
+curl -sS "https://servislist.vercel.app/api/v1/sklad/polozky?kategoria=SD%20karty" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### `GET /api/v1/sklad/pohyby` — história
+
+Query: `polozka` / `polozkaId`, `typ` (`prijem` \| `vydaj` \| `korekcia`), `prevadzka` / `prevadzkaId`, `od` / `from`, `do` / `to`.
+
+```bash
+curl -sS "https://servislist.vercel.app/api/v1/sklad/pohyby?typ=vydaj" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### `POST /api/v1/sklad/prijem` — návrh príjmu (vždy čakajúci)
+
+```bash
+curl -sS -X POST https://servislist.vercel.app/api/v1/sklad/prijem \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dodavatel": "AudioTech",
+    "cisloDl": "DL-2026/10-0187",
+    "datum": "2026-10-16",
+    "polozky": [
+      { "kod": "SD-CARD", "nazov": "SD karta", "kategoria": "SD karty", "mnozstvo": 10, "jednotka": "ks" }
+    ]
+  }'
+```
+
+```json
+{ "pending": true, "prijem": { "id": "…", "stav": "cakajuci", "zdroj": "servis_bot" } }
+```
+
+Stav skladu sa nezmení, kým Martin príjem neschváli. Po schválení vzniknú pohyby `prijem`.
+
 ---
 
 ## Typické toky

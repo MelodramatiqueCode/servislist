@@ -19,6 +19,7 @@ export type MaterialItem = {
   note: string;
   status: MaterialStatus;
   createdAt: string;
+  polozkaId?: string;
 };
 
 export type MaterialInput = {
@@ -28,6 +29,7 @@ export type MaterialInput = {
   unitPrice?: number | null;
   note?: string;
   status?: MaterialStatus;
+  polozkaId?: string;
 };
 
 export function parseMaterialStatus(
@@ -110,6 +112,7 @@ export function hydrateMaterialItem(
     note: String(o.note ?? ""),
     status: parseMaterialStatus(String(o.status ?? "planovane")) ?? "planovane",
     createdAt: String(o.createdAt ?? o.created_at ?? new Date().toISOString()),
+    polozkaId: String(o.polozkaId ?? o.polozka_id ?? "") || undefined,
   };
 }
 
@@ -125,5 +128,6 @@ export function parseMaterialList(raw: unknown): MaterialInput[] {
       unitPrice: row.unitPrice,
       note: row.note,
       status: row.status,
+      polozkaId: row.polozkaId,
     }));
 }

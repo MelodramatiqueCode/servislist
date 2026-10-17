@@ -316,6 +316,59 @@ export async function ensureSchema() {
       await sql`
         CREATE INDEX IF NOT EXISTS material_store_idx ON material (prevadzka_id)
       `;
+      await sql`
+        ALTER TABLE material
+        ADD COLUMN IF NOT EXISTS polozka_id TEXT NOT NULL DEFAULT ''
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS sklad_polozky (
+          id TEXT PRIMARY KEY,
+          kod TEXT NOT NULL UNIQUE,
+          nazov TEXT NOT NULL,
+          kategoria TEXT NOT NULL,
+          jednotka TEXT NOT NULL DEFAULT 'ks',
+          min_stav NUMERIC NOT NULL DEFAULT 0,
+          poznamka TEXT NOT NULL DEFAULT '',
+          archived_at TIMESTAMPTZ
+        )
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS dodacie_listy (
+          id TEXT PRIMARY KEY,
+          dodavatel TEXT NOT NULL DEFAULT '',
+          cislo_dl TEXT NOT NULL DEFAULT '',
+          datum TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          subor_url TEXT NOT NULL DEFAULT '',
+          subor_name TEXT NOT NULL DEFAULT '',
+          subor_mime TEXT NOT NULL DEFAULT '',
+          subor_bytes BYTEA,
+          stav TEXT NOT NULL DEFAULT 'cakajuci',
+          zdroj TEXT NOT NULL DEFAULT 'web',
+          vytvoril TEXT NOT NULL DEFAULT '',
+          schvalil TEXT NOT NULL DEFAULT '',
+          schvalene_at TIMESTAMPTZ,
+          riadky JSONB NOT NULL DEFAULT '[]'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS sklad_pohyby (
+          id TEXT PRIMARY KEY,
+          polozka_id TEXT NOT NULL,
+          typ TEXT NOT NULL,
+          mnozstvo NUMERIC NOT NULL,
+          dodaci_list_id TEXT,
+          ticket_id TEXT,
+          prevadzka_id TEXT,
+          ticket_material_id TEXT UNIQUE,
+          datum TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          kto TEXT NOT NULL DEFAULT ''
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS sklad_pohyby_polozka_idx
+        ON sklad_pohyby (polozka_id, datum DESC)
+      `;
       await archiveLegacyAutoTicketsOnce(sql);
       await archiveRedeployOfflineTicketsOnce(sql);
     })().catch((error) => {

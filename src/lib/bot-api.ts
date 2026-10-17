@@ -762,3 +762,85 @@ function collectStorePatch(body: Record<string, unknown>) {
   }
   return patch;
 }
+
+export async function botSkladOverview() {
+  const { skladSnapshot, serializePolozka, serializeDl, serializePohyb } =
+    await import("./sklad-store");
+  const snap = await skladSnapshot();
+  return {
+    stats: snap.stats,
+    low: snap.polozky.filter((p) => p.low).map(serializePolozka),
+    pending: snap.pending.map(serializeDl),
+    recent: snap.pohyby.slice(0, 12).map(serializePohyb),
+  };
+}
+
+export async function botSkladPolozky(url: URL) {
+  const { skladSnapshot, serializePolozka } = await import("./sklad-store");
+  const { parseKategoria } = await import("./sklad");
+  const snap = await skladSnapshot();
+  const q = queryString(url, "q", "hladaj");
+  const kategoria = parseKategoria(queryString(url, "kategoria"));
+  let rows = snap.polozky;
+  if (kategoria) rows = rows.filter((p) => p.kategoria === kategoria);
+  if (q) {
+    const needle = q.toLowerCase();
+    rows = rows.filter((p) =>
+      `${p.nazov} ${p.kod}`.toLowerCase().includes(needle),
+    );
+  }
+  return { count: rows.length, polozky: rows.map(serializePolozka) };
+}
+
+export async function botSkladPohyby(url: URL) {
+  const { listPohyby, serializePohyb } = await import("./sklad-store");
+  const { parsePohybTyp } = await import("./sklad");
+  const pohyby = await listPohyby({
+    polozkaId: queryString(url, "polozka", "polozkaId"),
+    typ: parsePohybTyp(queryString(url, "typ")) ?? undefined,
+    prevadzkaId: queryString(url, "prevadzka", "prevadzkaId"),
+    from: queryString(url, "od", "from"),
+    to: queryString(url, "do", "to"),
+  });
+  return { count: pohyby.length, pohyby: pohyby.map(serializePohyb) };
+}
+
+export async function botSkladPrijem(raw: unknown, actor: BotActor) {
+  const { createDodaciList } = await import("./sklad-store");
+  const { parseKategoria, parseJednotka } = await import("./sklad");
+  const body = asRecord(raw);
+  const itemsRaw = body.polozky ?? body.items ?? body.riadky;
+  if (!Array.isArray(itemsRaw) || itemsRaw.length === 0) {
+    throw new ApiError(400, "validation_error", "Chýbajú položky príjmu.", {
+      polozky: "Pošli aspoň jednu položku.",
+    });
+  }
+  const list = await createDodaciList({
+    dodavatel: String(body.dodavatel ?? ""),
+    cisloDl: String(body.cisloDl ?? body.cislo_dl ?? ""),
+    datum: String(body.datum ?? body.date ?? "") || new Date().toISOString(),
+    zdroj: "servis_bot",
+    vytvoril: actor.name,
+    riadky: itemsRaw.map((row) => {
+      const o = (row && typeof row === "object" ? row : {}) as Record<
+        string,
+        unknown
+      >;
+      return {
+        polozkaId: String(o.polozkaId ?? o.polozka_id ?? ""),
+        kod: String(o.kod ?? o.code ?? ""),
+        nazov: String(o.nazov ?? o.item ?? o.name ?? ""),
+        kategoria: parseKategoria(String(o.kategoria ?? "")) ?? "Iné",
+        jednotka: parseJednotka(String(o.jednotka ?? o.unit ?? "ks")),
+        minStav: Number(o.minStav ?? o.min_stav ?? 0) || 0,
+        mnozstvo: Number(o.mnozstvo ?? o.quantity ?? 0) || 0,
+        poznamka: String(o.poznamka ?? o.note ?? ""),
+        nova: Boolean(o.nova ?? o.new),
+      };
+    }),
+  });
+  safeRevalidate("/");
+  safeRevalidate("/sklad");
+  const { serializeDl } = await import("./sklad-store");
+  return { pending: true, prijem: serializeDl(list) };
+}

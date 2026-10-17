@@ -33,6 +33,27 @@ export const SEARCH_COMMANDS: SearchHit[] = [
     title: "Naplánovať výjazd",
     hint: "výjazd · výjazd zajtra",
   },
+  {
+    kind: "command",
+    id: "cmd-sklad",
+    href: "/sklad",
+    title: "Sklad",
+    hint: "sklad · položky · nízky stav",
+  },
+  {
+    kind: "command",
+    id: "cmd-prijem",
+    href: "/sklad/prijem",
+    title: "Nový príjem",
+    hint: "príjem · dodací list · nový príjem",
+  },
+  {
+    kind: "command",
+    id: "cmd-polozka",
+    href: "/sklad/nova",
+    title: "Nová položka",
+    hint: "nová položka · katalóg",
+  },
 ];
 
 function score(hay: string, q: string) {

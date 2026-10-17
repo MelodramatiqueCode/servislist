@@ -9,6 +9,7 @@ import {
   listAllPendingSuggestions,
   listPendingPrevadzky,
 } from "@/lib/prevadzka-store";
+import { listDodacieListy } from "@/lib/sklad-store";
 import {
   OUTAGE_ALERTS,
   isSameLocalDay,
@@ -121,6 +122,7 @@ export default async function Home({
     events,
     pendingStores,
     suggestions,
+    pendingPrijmy,
     liveTickets,
   ] = await Promise.all([
     listTickets({
@@ -139,6 +141,7 @@ export default async function Home({
     listDeviceEvents({ sinceIso: since.toISOString() }),
     listPendingPrevadzky(),
     listAllPendingSuggestions(),
+    listDodacieListy({ stav: "cakajuci" }),
     listTickets({ status: "vsetky", archived: "hide" }),
   ]);
 
@@ -391,6 +394,7 @@ export default async function Home({
           <ApprovalsPanel
             stores={pendingStores}
             suggestions={suggestions}
+            prijmy={pendingPrijmy}
             storeById={storeById}
           />
         </div>

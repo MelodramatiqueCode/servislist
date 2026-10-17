@@ -58,6 +58,7 @@ function rowToItem(row: Record<string, unknown>): MaterialItem {
       note: String(row.note ?? ""),
       status:
         parseMaterialStatus(String(row.status ?? "planovane")) ?? "planovane",
+      polozkaId: String(row.polozka_id ?? row.polozkaId ?? "") || undefined,
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()
@@ -102,7 +103,7 @@ async function insertDb(item: MaterialItem) {
   await sql`
     INSERT INTO material (
       id, ticket_id, prevadzka_id, item, quantity, unit, unit_price,
-      note, status, created_at
+      note, status, created_at, polozka_id
     ) VALUES (
       ${item.id},
       ${item.ticketId},
@@ -113,7 +114,8 @@ async function insertDb(item: MaterialItem) {
       ${item.unitPrice},
       ${item.note},
       ${item.status},
-      ${item.createdAt}::timestamptz
+      ${item.createdAt}::timestamptz,
+      ${item.polozkaId || ""}
     )
   `;
 }
@@ -128,7 +130,8 @@ async function updateDb(item: MaterialItem) {
       unit = ${item.unit},
       unit_price = ${item.unitPrice},
       note = ${item.note},
-      status = ${item.status}
+      status = ${item.status},
+      polozka_id = ${item.polozkaId || ""}
     WHERE id = ${item.id}
   `;
 }
@@ -147,7 +150,16 @@ export async function addMaterialItem(
     note: input.note?.trim() || "",
     status: input.status ?? "planovane",
     createdAt: new Date().toISOString(),
+    polozkaId: input.polozkaId,
   };
+  if (!item.polozkaId) {
+    const { findPolozkaByNameOrCode, ensureSkladCatalog } = await import(
+      "./sklad-store"
+    );
+    await ensureSkladCatalog();
+    const hit = await findPolozkaByNameOrCode(item.item);
+    if (hit) item.polozkaId = hit.id;
+  }
   if (isDatabaseConfigured()) {
     await insertDb(item);
   } else {
@@ -198,6 +210,7 @@ export async function updateMaterialItem(
       patch.unitPrice === undefined ? current.unitPrice : patch.unitPrice,
     note: patch.note !== undefined ? patch.note : current.note,
     status: patch.status ?? current.status,
+    polozkaId: patch.polozkaId ?? current.polozkaId,
   };
   if (isDatabaseConfigured()) {
     await updateDb(next);
@@ -237,6 +250,7 @@ export function serializeMaterial(item: MaterialItem) {
     unitPrice: item.unitPrice,
     note: item.note,
     status: item.status,
+    polozkaId: item.polozkaId || "",
     statusLabel:
       item.status === "pouzite" ? "Použité" : "Plánované",
     createdAt: item.createdAt,

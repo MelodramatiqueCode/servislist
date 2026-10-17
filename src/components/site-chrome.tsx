@@ -9,6 +9,7 @@ const NAV = [
   { href: "/prevadzky", label: "Prevádzky", icon: "⌂" },
   { href: "/zariadenia", label: "Zariadenia", icon: "⦿" },
   { href: "/vyjazdy", label: "Výjazdy", icon: "⇢" },
+  { href: "/sklad", label: "Sklad", icon: "▦" },
 ] as const;
 
 function navOn(pathname: string, href: string, exact?: boolean) {

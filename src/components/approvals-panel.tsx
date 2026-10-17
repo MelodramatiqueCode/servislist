@@ -1,19 +1,23 @@
 import Link from "next/link";
 import {
   confirmPrevadzkaAction,
+  resolveDlAction,
   resolveSuggestionAction,
 } from "@/lib/actions";
 import { relativeAge } from "@/lib/pulse";
 import { storeLabel } from "@/lib/prevadzka-store";
 import type { PrevadzkaRecord, ProfileSuggestion } from "@/lib/prevadzka-profile";
+import type { DodaciList } from "@/lib/sklad";
 
 export function ApprovalsPanel({
   stores,
   suggestions,
+  prijmy = [],
   storeById,
 }: {
   stores: PrevadzkaRecord[];
   suggestions: ProfileSuggestion[];
+  prijmy?: DodaciList[];
   storeById: Map<string, PrevadzkaRecord>;
 }) {
   const items = [
@@ -25,6 +29,7 @@ export function ApprovalsPanel({
       kind: "store" as const,
       storeId: store.id,
       suggestionId: "",
+      dlId: "",
     })),
     ...suggestions.map((s) => ({
       id: `sug-${s.id}`,
@@ -34,6 +39,17 @@ export function ApprovalsPanel({
       kind: "suggestion" as const,
       storeId: s.prevadzkaId,
       suggestionId: s.id,
+      dlId: "",
+    })),
+    ...prijmy.map((dl) => ({
+      id: `dl-${dl.id}`,
+      href: "/sklad",
+      title: `Príjem ${dl.cisloDl || "dodací list"}`,
+      hint: `${dl.dodavatel || "sklad"} · ${dl.riadky.length} položiek · ${relativeAge(dl.createdAt)}`,
+      kind: "prijem" as const,
+      storeId: "",
+      suggestionId: "",
+      dlId: dl.id,
     })),
   ];
 
@@ -63,6 +79,14 @@ export function ApprovalsPanel({
             {item.kind === "store" ? (
               <form action={confirmPrevadzkaAction}>
                 <input type="hidden" name="id" value={item.storeId} />
+                <button className="ok" type="submit" aria-label="Schváliť">
+                  ✓
+                </button>
+              </form>
+            ) : item.kind === "prijem" ? (
+              <form action={resolveDlAction}>
+                <input type="hidden" name="id" value={item.dlId} />
+                <input type="hidden" name="action" value="accepted" />
                 <button className="ok" type="submit" aria-label="Schváliť">
                   ✓
                 </button>

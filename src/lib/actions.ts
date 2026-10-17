@@ -527,3 +527,90 @@ export async function deleteMaterialAction(formData: FormData) {
   if (ticketId) revalidatePath(`/ticket/${ticketId}`);
   if (prevadzkaId) revalidatePath(`/prevadzky/${prevadzkaId}`);
 }
+
+export async function createPolozkaAction(formData: FormData) {
+  const nazov = str(formData, "nazov");
+  const kod = str(formData, "kod");
+  if (!nazov || !kod) return;
+  const { createPolozka } = await import("./sklad-store");
+  await createPolozka({
+    nazov,
+    kod,
+    kategoria: str(formData, "kategoria"),
+    jednotka: str(formData, "jednotka"),
+    minStav: Number(str(formData, "minStav") || 0),
+    poznamka: str(formData, "poznamka"),
+  });
+  revalidatePath("/sklad");
+  redirect("/sklad");
+}
+
+export async function createPrijemAction(formData: FormData) {
+  const { createDodaciList } = await import("./sklad-store");
+  const { parseKategoria, parseJednotka } = await import("./sklad");
+  let riadky: Array<Record<string, unknown>> = [];
+  try {
+    const parsed = JSON.parse(str(formData, "riadkyJson") || "[]");
+    if (Array.isArray(parsed)) riadky = parsed;
+  } catch {
+    riadky = [];
+  }
+  const file = formData.get("subor");
+  let upload: { name: string; mime: string; bytes: Buffer } | undefined;
+  if (file instanceof File && file.size > 0) {
+    upload = {
+      name: file.name,
+      mime: file.type,
+      bytes: Buffer.from(await file.arrayBuffer()),
+    };
+  }
+  await createDodaciList({
+    dodavatel: str(formData, "dodavatel"),
+    cisloDl: str(formData, "cisloDl"),
+    datum: str(formData, "datum") || new Date().toISOString(),
+    vytvoril: str(formData, "vytvoril") || "Martin",
+    zdroj: "web",
+    riadky: riadky.map((row) => ({
+      polozkaId: String(row.polozkaId ?? ""),
+      kod: String(row.kod ?? ""),
+      nazov: String(row.nazov ?? ""),
+      kategoria: parseKategoria(String(row.kategoria ?? "")) ?? "Iné",
+      jednotka: parseJednotka(String(row.jednotka ?? "ks")),
+      minStav: Number(row.minStav ?? 0) || 0,
+      mnozstvo: Number(row.mnozstvo ?? 0) || 0,
+      poznamka: String(row.poznamka ?? ""),
+      nova: Boolean(row.nova),
+    })),
+    file: upload,
+  });
+  revalidatePath("/sklad");
+  revalidatePath("/");
+  redirect("/sklad");
+}
+
+export async function resolveDlAction(formData: FormData) {
+  const { resolveDodaciList } = await import("./sklad-store");
+  const id = str(formData, "id");
+  if (!id) return;
+  const action = str(formData, "action") === "rejected" ? "rejected" : "accepted";
+  await resolveDodaciList(id, action, str(formData, "author") || "Martin");
+  revalidatePath("/");
+  revalidatePath("/sklad");
+  revalidatePath(`/sklad/prijem/${id}`);
+}
+
+export async function korekciaAction(formData: FormData) {
+  const { addPohyb } = await import("./sklad-store");
+  const polozkaId = str(formData, "polozkaId");
+  const qty = Number(str(formData, "mnozstvo") || 0);
+  if (!polozkaId || !qty) return;
+  await addPohyb({
+    polozkaId,
+    typ: "korekcia",
+    mnozstvo: qty,
+    kto: str(formData, "kto") || "Martin",
+  });
+  revalidatePath("/sklad");
+  revalidatePath(`/sklad/polozky/${polozkaId}`);
+  revalidatePath("/sklad/pohyby");
+}
