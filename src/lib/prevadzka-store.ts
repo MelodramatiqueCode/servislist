@@ -275,11 +275,21 @@ async function insertStoreIfMissingDb(store: PrevadzkaRecord): Promise<boolean> 
 }
 
 async function linkDeviceDb(prevadzkaId: string, deviceUuid: string) {
+  await linkDevicesDbBatch([{ storeId: prevadzkaId, uuid: deviceUuid }]);
+}
+
+async function linkDevicesDbBatch(
+  links: Array<{ storeId: string; uuid: string }>,
+) {
+  if (links.length === 0) return;
   await ensureSchema();
   const sql = getSql();
+  const storeIds = links.map((row) => row.storeId);
+  const uuids = links.map((row) => row.uuid);
   await sql`
     INSERT INTO prevadzka_devices (prevadzka_id, device_uuid)
-    VALUES (${prevadzkaId}, ${deviceUuid})
+    SELECT * FROM UNNEST(${storeIds}::text[], ${uuids}::text[])
+    AS t(prevadzka_id, device_uuid)
     ON CONFLICT (prevadzka_id, device_uuid) DO NOTHING
   `;
 }
@@ -388,21 +398,21 @@ export async function backfillPrevadzkyFromDevices(devices: ServiceDevice[]) {
   }
 
   if (isDatabaseConfigured()) {
-    await Promise.all(
-      missingLinks.map((row) => linkDeviceDb(row.storeId, row.uuid)),
-    );
-  } else {
+    await linkDevicesDbBatch(missingLinks);
+  } else if (missingLinks.length) {
+    const blob = await readBlob();
+    let dirty = false;
     for (const row of missingLinks) {
-      const blob = await readBlob();
       if (
         !blob.devices.some(
           (d) => d.prevadzkaId === row.storeId && d.deviceUuid === row.uuid,
         )
       ) {
         blob.devices.push({ prevadzkaId: row.storeId, deviceUuid: row.uuid });
-        await writeBlob(blob);
+        dirty = true;
       }
     }
+    if (dirty) await writeBlob(blob);
   }
 
   const stores = await listStoredPrevadzky();
