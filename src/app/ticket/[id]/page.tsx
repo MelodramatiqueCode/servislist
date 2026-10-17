@@ -9,7 +9,7 @@ import {
   updateStatusAction,
 } from "@/lib/actions";
 import { listMaterial } from "@/lib/material-store";
-import { MATERIAL_STATUS_LABELS, materialTotal } from "@/lib/material";
+import { MATERIAL_STATUS_LABELS } from "@/lib/material";
 import { TICKET_KIND_LABELS } from "@/lib/types";
 import {
   formatDate,
@@ -43,7 +43,6 @@ export default async function TicketDetailPage({
     : null;
   const archived = isTicketArchived(ticket);
   const material = await listMaterial({ ticketId: ticket.id });
-  const materialSum = materialTotal(material);
 
   return (
     <div className="shell max-w-4xl space-y-6">
@@ -158,7 +157,6 @@ export default async function TicketDetailPage({
                       <th>Položka</th>
                       <th>Množstvo</th>
                       <th>Jedn.</th>
-                      <th>Cena</th>
                       <th>Stav</th>
                       <th></th>
                     </tr>
@@ -176,9 +174,6 @@ export default async function TicketDetailPage({
                         </td>
                         <td>{row.quantity}</td>
                         <td>{row.unit}</td>
-                        <td>
-                          {row.unitPrice != null ? `${row.unitPrice} €` : "—"}
-                        </td>
                         <td>{MATERIAL_STATUS_LABELS[row.status]}</td>
                         <td>
                           {archived ? null : (
@@ -224,13 +219,8 @@ export default async function TicketDetailPage({
                   </tbody>
                 </table>
               )}
-              {materialSum != null ? (
-                <p className="text-sm font-semibold">
-                  Spolu {materialSum.toFixed(2)} €
-                </p>
-              ) : null}
               {archived || !ticket.prevadzkaId ? null : (
-                <form action={addMaterialAction} className="grid gap-2 md:grid-cols-6">
+                <form action={addMaterialAction} className="grid gap-2 md:grid-cols-5">
                   <input type="hidden" name="ticketId" value={ticket.id} />
                   <input type="hidden" name="prevadzkaId" value={ticket.prevadzkaId} />
                   <input
@@ -247,11 +237,6 @@ export default async function TicketDetailPage({
                   <input
                     name="unit"
                     defaultValue="ks"
-                    className="rounded-xl border border-[var(--line)] px-3 py-2"
-                  />
-                  <input
-                    name="unitPrice"
-                    placeholder="€"
                     className="rounded-xl border border-[var(--line)] px-3 py-2"
                   />
                   <button type="submit" className="btn btn-ghost">

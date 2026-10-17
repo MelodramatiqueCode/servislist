@@ -22,7 +22,6 @@ import { loadPrevadzkaDetail } from "@/lib/prevadzka-view";
 import { hardwareLabel } from "@/lib/parse-device";
 import {
   MATERIAL_STATUS_LABELS,
-  materialTotal,
   type MaterialItem,
 } from "@/lib/material";
 import {
@@ -730,7 +729,6 @@ function MaterialBlock({
   ticketId: string;
   prevadzkaId: string;
 }) {
-  const total = materialTotal(items);
   return (
     <div className="space-y-3">
       {items.length === 0 ? (
@@ -742,7 +740,6 @@ function MaterialBlock({
               <th>Položka</th>
               <th>Množstvo</th>
               <th>Jedn.</th>
-              <th>Cena</th>
               <th>Stav</th>
               <th></th>
             </tr>
@@ -758,7 +755,6 @@ function MaterialBlock({
                 </td>
                 <td>{row.quantity}</td>
                 <td>{row.unit}</td>
-                <td>{row.unitPrice != null ? `${row.unitPrice} €` : "—"}</td>
                 <td>{MATERIAL_STATUS_LABELS[row.status]}</td>
                 <td>
                   <div className="flex gap-1">
@@ -790,17 +786,13 @@ function MaterialBlock({
           </tbody>
         </table>
       )}
-      {total != null ? (
-        <p className="text-sm font-semibold">Spolu {total.toFixed(2)} €</p>
-      ) : null}
       {ticketId ? (
-        <form action={addMaterialAction} className="grid gap-2 md:grid-cols-6">
+        <form action={addMaterialAction} className="grid gap-2 md:grid-cols-5">
           <input type="hidden" name="ticketId" value={ticketId} />
           <input type="hidden" name="prevadzkaId" value={prevadzkaId} />
           <input name="item" placeholder="Položka" className="md:col-span-2 rounded-xl border border-[var(--line)] px-3 py-2" />
           <input name="quantity" type="number" defaultValue={1} className="rounded-xl border border-[var(--line)] px-3 py-2" />
           <input name="unit" defaultValue="ks" className="rounded-xl border border-[var(--line)] px-3 py-2" />
-          <input name="unitPrice" placeholder="€" className="rounded-xl border border-[var(--line)] px-3 py-2" />
           <button type="submit" className="btn btn-ghost">
             +
           </button>

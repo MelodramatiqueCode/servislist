@@ -140,7 +140,7 @@ export function PrevadzkaNovaForm() {
           {material.map((row, i) => (
             <div key={`${row.item}-${i}`} className="grid gap-2 md:grid-cols-12">
               <input
-                className="md:col-span-5 rounded-xl border border-[var(--line)] px-3 py-2"
+                className="md:col-span-7 rounded-xl border border-[var(--line)] px-3 py-2"
                 value={row.item}
                 onChange={(e) =>
                   setMaterial((list) =>
@@ -174,25 +174,6 @@ export function PrevadzkaNovaForm() {
                   setMaterial((list) =>
                     list.map((r, idx) =>
                       idx === i ? { ...r, unit: e.target.value } : r,
-                    ),
-                  )
-                }
-              />
-              <input
-                className="md:col-span-2 rounded-xl border border-[var(--line)] px-3 py-2"
-                placeholder="€ / j."
-                value={row.unitPrice ?? ""}
-                onChange={(e) =>
-                  setMaterial((list) =>
-                    list.map((r, idx) =>
-                      idx === i
-                        ? {
-                            ...r,
-                            unitPrice: e.target.value
-                              ? Number(e.target.value)
-                              : null,
-                          }
-                        : r,
                     ),
                   )
                 }
