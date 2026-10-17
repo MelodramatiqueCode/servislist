@@ -1,10 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  addMaterialAction,
   addNoteAction,
+  deleteMaterialAction,
+  updateMaterialAction,
   updatePriorityAction,
   updateStatusAction,
 } from "@/lib/actions";
+import { listMaterial } from "@/lib/material-store";
+import { MATERIAL_STATUS_LABELS, materialTotal } from "@/lib/material";
+import { TICKET_KIND_LABELS } from "@/lib/types";
 import {
   formatDate,
   priorityClass,
@@ -36,6 +42,8 @@ export default async function TicketDetailPage({
     ? await getDevice(ticket.deviceUuid)
     : null;
   const archived = isTicketArchived(ticket);
+  const material = await listMaterial({ ticketId: ticket.id });
+  const materialSum = materialTotal(material);
 
   return (
     <div className="shell max-w-4xl space-y-6">
@@ -63,6 +71,19 @@ export default async function TicketDetailPage({
                 ? ` · ${TICKET_ALERT_LABELS[ticket.alertType] ?? ticket.alertType}`
                 : ""}
             </span>
+          ) : null}
+          {ticket.kind && ticket.kind in TICKET_KIND_LABELS ? (
+            <span className="chip chip-edit">
+              {TICKET_KIND_LABELS[ticket.kind as keyof typeof TICKET_KIND_LABELS]}
+            </span>
+          ) : null}
+          {ticket.prevadzkaId ? (
+            <Link
+              href={`/prevadzky/${ticket.prevadzkaId}`}
+              className="chip prio-normalna"
+            >
+              Prevádzka
+            </Link>
           ) : null}
           {archived ? <span className="chip chip-overdue">Archív</span> : null}
         </div>
@@ -124,6 +145,122 @@ export default async function TicketDetailPage({
               </div>
             ) : null}
           </div>
+
+          {ticket.prevadzkaId || material.length ? (
+            <div className="space-y-3 border-t border-[var(--line)] pt-5">
+              <h2 className="text-lg font-bold">Materiál</h2>
+              {material.length === 0 ? (
+                <p className="text-sm text-[var(--ink-soft)]">Zatiaľ bez materiálu.</p>
+              ) : (
+                <table className="profile-table">
+                  <thead>
+                    <tr>
+                      <th>Položka</th>
+                      <th>Množstvo</th>
+                      <th>Jedn.</th>
+                      <th>Cena</th>
+                      <th>Stav</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {material.map((row) => (
+                      <tr key={row.id}>
+                        <td>
+                          <div className="font-semibold">{row.item}</div>
+                          {row.note ? (
+                            <div className="text-xs text-[var(--ink-soft)]">
+                              {row.note}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td>{row.quantity}</td>
+                        <td>{row.unit}</td>
+                        <td>
+                          {row.unitPrice != null ? `${row.unitPrice} €` : "—"}
+                        </td>
+                        <td>{MATERIAL_STATUS_LABELS[row.status]}</td>
+                        <td>
+                          {archived ? null : (
+                            <div className="flex gap-1">
+                              <form action={updateMaterialAction}>
+                                <input type="hidden" name="id" value={row.id} />
+                                <input type="hidden" name="ticketId" value={ticket.id} />
+                                <input
+                                  type="hidden"
+                                  name="prevadzkaId"
+                                  value={ticket.prevadzkaId || ""}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="status"
+                                  value={
+                                    row.status === "pouzite"
+                                      ? "planovane"
+                                      : "pouzite"
+                                  }
+                                />
+                                <button className="btn btn-ghost" type="submit">
+                                  {row.status === "pouzite" ? "Plán" : "Použité"}
+                                </button>
+                              </form>
+                              <form action={deleteMaterialAction}>
+                                <input type="hidden" name="id" value={row.id} />
+                                <input type="hidden" name="ticketId" value={ticket.id} />
+                                <input
+                                  type="hidden"
+                                  name="prevadzkaId"
+                                  value={ticket.prevadzkaId || ""}
+                                />
+                                <button className="btn btn-ghost" type="submit">
+                                  ×
+                                </button>
+                              </form>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {materialSum != null ? (
+                <p className="text-sm font-semibold">
+                  Spolu {materialSum.toFixed(2)} €
+                </p>
+              ) : null}
+              {archived || !ticket.prevadzkaId ? null : (
+                <form action={addMaterialAction} className="grid gap-2 md:grid-cols-6">
+                  <input type="hidden" name="ticketId" value={ticket.id} />
+                  <input type="hidden" name="prevadzkaId" value={ticket.prevadzkaId} />
+                  <input
+                    name="item"
+                    placeholder="Položka"
+                    className="md:col-span-2 rounded-xl border border-[var(--line)] px-3 py-2"
+                  />
+                  <input
+                    name="quantity"
+                    type="number"
+                    defaultValue={1}
+                    className="rounded-xl border border-[var(--line)] px-3 py-2"
+                  />
+                  <input
+                    name="unit"
+                    defaultValue="ks"
+                    className="rounded-xl border border-[var(--line)] px-3 py-2"
+                  />
+                  <input
+                    name="unitPrice"
+                    placeholder="€"
+                    className="rounded-xl border border-[var(--line)] px-3 py-2"
+                  />
+                  <button type="submit" className="btn btn-ghost">
+                    +
+                  </button>
+                </form>
+              )}
+            </div>
+          ) : null}
 
           <div className="space-y-3 border-t border-[var(--line)] pt-5">
             <h2 className="text-lg font-bold">Poznámky zo servisu</h2>

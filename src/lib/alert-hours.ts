@@ -1,4 +1,5 @@
 import type { AlertConfig, HoursSpec } from "./alert-config";
+import { lookupPrevadzkaHours } from "./prevadzka-hours";
 import { prevadzkaKey } from "./vyjazd-stops";
 
 export type HoursDevice = {
@@ -90,7 +91,12 @@ export function isWithinStoreHours(
   device: HoursDevice,
   config: AlertConfig,
 ) {
-  const spec = resolveHoursSpec(device, config);
   const clock = zonedClock(at, config.storeTimezone);
+  const fromStore = lookupPrevadzkaHours(device, clock.day);
+  if (fromStore) {
+    if ("closed" in fromStore) return false;
+    return isWithinHoursSpec(fromStore, clock.minute, clock.day, [clock.day]);
+  }
+  const spec = resolveHoursSpec(device, config);
   return isWithinHoursSpec(spec, clock.minute, clock.day, config.storeDays);
 }

@@ -81,6 +81,13 @@ export type ServiceDevice = {
 
 export type TicketSource = "manual" | "auto";
 
+export type TicketKind = "montaz" | "spustenie" | "";
+
+export const TICKET_KIND_LABELS: Record<Exclude<TicketKind, "">, string> = {
+  montaz: "Montáž / nová prevádzka",
+  spustenie: "Spustenie zariadenia",
+};
+
 export type TicketAlertType =
   | "offline"
   | "undervolt"
@@ -150,6 +157,8 @@ export type Ticket = {
   /** ISO — prítomné = ticket je v archíve (stav ostáva, len sa schová zo zoznamu). */
   archivedAt?: string;
   clientRef?: string;
+  prevadzkaId?: string;
+  kind?: TicketKind;
 };
 
 export type CreateTicketInput = {
@@ -165,6 +174,8 @@ export type CreateTicketInput = {
   source?: TicketSource;
   alertType?: TicketAlertType;
   clientRef?: string;
+  prevadzkaId?: string;
+  kind?: TicketKind;
 };
 
 export type TicketStore = {

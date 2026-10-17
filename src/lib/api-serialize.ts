@@ -15,6 +15,12 @@ import {
   VYJAZD_STATUS_LABELS,
 } from "./types";
 import type { Prevadzka } from "./prevadzky";
+import { formatOpeningHours, profileCompleteness, type PrevadzkaRecord } from "./prevadzka-profile";
+import { storeLabel } from "./prevadzka-store";
+import type { MaterialItem } from "./material";
+import { serializeMaterial } from "./material-store";
+import type { VykazEntry } from "./vykaz-prace";
+import { deviceSnapshot, serializeVykaz } from "./prevadzka-view";
 
 export function serializeNote(note: TicketNote) {
   return {
@@ -50,6 +56,8 @@ export function serializeTicket(ticket: Ticket) {
     alertType: ticket.alertType,
     archivedAt: ticket.archivedAt,
     clientRef: ticket.clientRef || undefined,
+    prevadzkaId: ticket.prevadzkaId || "",
+    kind: ticket.kind || "",
   };
 }
 
@@ -113,6 +121,46 @@ export function serializeDevice(device: ServiceDevice) {
 
 export function serializePrevadzka(prevadzka: Prevadzka) {
   return prevadzka;
+}
+
+export function serializePrevadzkaProfile(
+  store: PrevadzkaRecord,
+  extras?: {
+    devices?: ServiceDevice[];
+    vykaz?: VykazEntry[];
+    material?: MaterialItem[];
+    pending?: boolean;
+  },
+) {
+  const completeness = profileCompleteness(store);
+  return {
+    id: store.id,
+    key: store.storeKey,
+    label: storeLabel(store),
+    partner: store.chain,
+    chain: store.chain,
+    code: store.code,
+    storeType: store.storeType,
+    name: store.name,
+    city: store.city,
+    address: store.address,
+    phone: store.phone,
+    gpsLat: store.gpsLat,
+    gpsLng: store.gpsLng,
+    openingHours: store.openingHours,
+    openingHoursLabel: formatOpeningHours(store.openingHours),
+    profile: store.profile,
+    status: store.status,
+    jobType: store.jobType,
+    deviceCount: extras?.devices?.length ?? 0,
+    devices: (extras?.devices ?? []).map(deviceSnapshot),
+    vykaz: (extras?.vykaz ?? []).map(serializeVykaz),
+    material: (extras?.material ?? []).map(serializeMaterial),
+    completeness,
+    createdAt: store.createdAt,
+    updatedAt: store.updatedAt,
+    pending: extras?.pending ?? store.status === "pending",
+  };
 }
 
 export function serializeVyjazdSummary(vyjazd: Vyjazd) {
