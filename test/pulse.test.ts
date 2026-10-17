@@ -86,7 +86,12 @@ describe("command search", () => {
     assert.ok(searchCommands("nová prevádzka").some((h) => h.href === "/prevadzky/nova"));
     assert.ok(searchCommands("sklad").some((h) => h.href === "/sklad"));
     assert.ok(searchCommands("nový príjem").some((h) => h.href === "/sklad/prijem"));
-    assert.ok(searchCommands("kontrola").some((h) => h.href === "/kontrola"));
+    assert.ok(!searchCommands("kontrola").some((h) => h.href === "/kontrola"));
+    assert.ok(
+      searchCommands("kontrola", { includeKontrola: true }).some(
+        (h) => h.href === "/kontrola",
+      ),
+    );
   });
 
   test("catalog finds tickets by code and store name", () => {

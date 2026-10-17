@@ -1,13 +1,19 @@
 import Link from "next/link";
 import {
   confirmPrevadzkaAction,
+  kontrolaLogoutAction,
   rejectPrevadzkaAction,
   resolveDlAction,
   resolveNavrhAction,
   resolveSuggestionAction,
 } from "@/lib/actions";
+import { KontrolaLocked } from "@/components/kontrola-login";
 import { formatDateTime } from "@/lib/format";
 import { autorLabel, AUDIT_AUTORI, AUDIT_TYPY } from "@/lib/kontrola";
+import {
+  isKontrolaConfigured,
+  isKontrolaUnlocked,
+} from "@/lib/kontrola-session";
 import { kontrolaSnapshot } from "@/lib/kontrola-view";
 import { relativeAge } from "@/lib/pulse";
 
@@ -16,6 +22,7 @@ type Search = Promise<{
   autor?: string;
   typ?: string;
   akcia?: string;
+  e?: string;
 }>;
 
 export default async function KontrolaPage({
@@ -24,6 +31,12 @@ export default async function KontrolaPage({
   searchParams: Search;
 }) {
   const params = await searchParams;
+  if (!isKontrolaConfigured()) {
+    return <KontrolaLocked configured={false} />;
+  }
+  if (!(await isKontrolaUnlocked())) {
+    return <KontrolaLocked configured error={params.e} />;
+  }
   const snap = await kontrolaSnapshot();
   const audit = snap.audit.filter((row) => {
     if (params.autor && row.autor !== params.autor) return false;
@@ -45,9 +58,16 @@ export default async function KontrolaPage({
           <div className="label">Admin · len Martin</div>
           <h1 className="text-3xl font-extrabold">Kontrola</h1>
         </div>
-        <p className="text-sm text-[var(--ink-soft)]">
-          Aktualizované {formatDateTime(snap.now)} · Balena len na čítanie
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-[var(--ink-soft)]">
+            Aktualizované {formatDateTime(snap.now)} · Balena len na čítanie
+          </p>
+          <form action={kontrolaLogoutAction}>
+            <button className="btn btn-ghost" type="submit">
+              Odhlásiť
+            </button>
+          </form>
+        </div>
       </div>
 
       <section className="panel space-y-4 p-5">

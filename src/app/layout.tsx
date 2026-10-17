@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import { MobileChrome, SiteHeader } from "@/components/site-chrome";
+import { isKontrolaUnlocked } from "@/lib/kontrola-session";
 import { countPendingApprovals } from "@/lib/kontrola-store";
 import "./globals.css";
 
@@ -31,7 +32,9 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   let pendingCount = 0;
   try {
-    pendingCount = await countPendingApprovals();
+    if (await isKontrolaUnlocked()) {
+      pendingCount = await countPendingApprovals();
+    }
   } catch {
     pendingCount = 0;
   }
