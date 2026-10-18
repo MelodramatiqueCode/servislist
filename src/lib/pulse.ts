@@ -1,3 +1,4 @@
+import { ASSIGNED_TO_DEFAULT } from "./ticket-input";
 import type { Ticket, TicketPriority, TicketStatus, Vyjazd } from "./types";
 import { vyjazdTicketIds } from "./vyjazd-stops";
 
@@ -47,6 +48,14 @@ export function ticketSourceLabel(ticket: Pick<Ticket, "source" | "assignedTo" |
 
 export function isBotSource(label: string) {
   return label === SOURCE_BOT_LABELS.servis || label === SOURCE_BOT_LABELS.hotline;
+}
+
+export function ticketAssigneeLabel(assignedTo: string | undefined) {
+  const name = String(assignedTo ?? "").trim();
+  if (!name || name === ASSIGNED_TO_DEFAULT) {
+    return { label: "nepridelené", assigned: false };
+  }
+  return { label: name, assigned: true };
 }
 
 export function relativeAge(iso: string, now = new Date()) {

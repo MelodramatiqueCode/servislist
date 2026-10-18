@@ -5,6 +5,7 @@ import {
   outageCountsByDay,
   relativeAge,
   sparkPolyline,
+  ticketAssigneeLabel,
   ticketProgress,
   ticketSourceLabel,
   ticketStripeClass,
@@ -40,6 +41,25 @@ describe("pulse helpers", () => {
     assert.equal(ticketProgress("hotove"), 100);
     assert.equal(ticketStripeClass("vysoka"), "p-vysoka");
     assert.equal(ticketStripeClass("nizka"), "p-nizka");
+  });
+
+  test("assignee label is the name or muted nepridelené", () => {
+    assert.deepEqual(ticketAssigneeLabel("Martin"), {
+      label: "Martin",
+      assigned: true,
+    });
+    assert.deepEqual(ticketAssigneeLabel("Nepriradené"), {
+      label: "nepridelené",
+      assigned: false,
+    });
+    assert.deepEqual(ticketAssigneeLabel("  "), {
+      label: "nepridelené",
+      assigned: false,
+    });
+    assert.deepEqual(ticketAssigneeLabel(undefined), {
+      label: "nepridelené",
+      assigned: false,
+    });
   });
 
   test("source label distinguishes bots from manual tickets", () => {
@@ -102,6 +122,9 @@ describe("command search", () => {
     );
     assert.match(src, /tel:\$\{phone\}/);
     assert.match(src, /target="_blank"/);
+    assert.match(src, /ticketAssigneeLabel/);
+    assert.match(src, /className="meta"/);
+    assert.match(src, /nepridelené|assignee\.label/);
     assert.doesNotMatch(src, /onClick/);
   });
 

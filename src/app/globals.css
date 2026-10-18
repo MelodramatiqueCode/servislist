@@ -1033,6 +1033,50 @@ a.ctrl-tile[data-on="true"] {
   min-height: 38px;
 }
 
+.pulse-card .meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.pulse-card .meta .chip {
+  flex-shrink: 0;
+}
+
+.pulse-card .who {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.pulse-card .who svg {
+  flex-shrink: 0;
+}
+
+.pulse-card .who > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pulse-card .who.muted {
+  color: var(--ink-soft);
+}
+
+.pulse-card .src {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .pulse-card .qa {
   display: none;
   gap: 6px;
