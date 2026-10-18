@@ -3,7 +3,10 @@ import { describe, test } from "node:test";
 import type { ServiceDevice } from "../src/lib/types";
 import {
   applyDeviceToTicketFields,
+  ASSIGNED_TO_DEFAULT,
+  assignedToChangeNote,
   collectTicketCreateFields,
+  normalizeAssignedTo,
   normalizePriority,
   parseTicketStatus,
   validateCreateTicket,
@@ -56,6 +59,20 @@ describe("ticket-input", () => {
     assert.equal(normalizePriority("xxx"), "normalna");
     assert.equal(parseTicketStatus("caka_diely"), "caka_diely");
     assert.equal(parseTicketStatus("hotoveee"), null);
+  });
+
+  test("assignedTo trimne a prázdne ide na Nepriradené", () => {
+    assert.equal(normalizeAssignedTo("Martin"), "Martin");
+    assert.equal(normalizeAssignedTo("  Peter  "), "Peter");
+    assert.equal(normalizeAssignedTo(""), ASSIGNED_TO_DEFAULT);
+    assert.equal(normalizeAssignedTo("   "), ASSIGNED_TO_DEFAULT);
+    assert.equal(normalizeAssignedTo(undefined), ASSIGNED_TO_DEFAULT);
+    const fields = collectTicketCreateFields({ assignedTo: "  Martin " });
+    assert.equal(fields.assignedTo, "Martin");
+    assert.equal(
+      assignedToChangeNote("Nepriradené", "Martin", "hotline"),
+      "Servisák zmenený: Nepriradené → Martin (bot: hotline)",
+    );
   });
 
   test("clientRef a prevádzka z JSON tela", () => {

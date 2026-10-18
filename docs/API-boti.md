@@ -224,13 +224,31 @@ curl -sS -X POST https://servislist.vercel.app/api/v1/tickets/12/reopen \
 
 `reopen` predvolene nastaví `otvorene`. Ak už ticket v danom stave je, vráti `changed: false`.
 
-### `PATCH /api/v1/tickets/:id` — stav, priorita, výjazd
+### `PATCH /api/v1/tickets/:id` — stav, priorita, servisák, výjazd
+
+Rovnaké polia ako pri `POST /api/v1/tickets` plus zmena stavu / výjazdu. `assignedTo` (servisák) sa validuje rovnako ako pri vytvorení: trim; prázdne → `Nepriradené`. Žiadny zatvorený zoznam mien — ľubovoľný reťazec.
+
+Ak sa servisák zmení, do histórie ticketu a do audit logu (Kontrola) ide poznámka `Servisák zmenený: <starý> → <nový> (bot: servis|hotline)`. Rovnaká hodnota je no-op (`changed: false`).
 
 ```bash
 curl -sS -X PATCH https://servislist.vercel.app/api/v1/tickets/12 \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{ "status": "caka_diely", "priority": "urgentna", "vyjazdId": "V-0003" }'
+```
+
+```bash
+curl -sS -X PATCH https://servislist.vercel.app/api/v1/tickets/12 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "assignedTo": "Martin" }'
+```
+
+```json
+{
+  "ticket": { "code": "#0012", "assignedTo": "Martin" },
+  "changed": true
+}
 ```
 
 ### `POST /api/v1/tickets/:id/vyjazd` — naviaž na existujúci výjazd

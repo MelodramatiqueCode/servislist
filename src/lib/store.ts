@@ -66,6 +66,7 @@ import {
   matchesArchivedFilter,
   type ArchivedFilter,
 } from "./ticket-archive";
+import { assignedToChangeNote, normalizeAssignedTo } from "./ticket-input";
 import { inDateRange, parseTicketRef, parseVyjazdRef } from "./refs";
 import {
   buildPrevadzky,
@@ -851,7 +852,7 @@ export async function createTicket(
     deviceUuid: input.deviceUuid?.trim() || "",
     customerName: input.customerName.trim(),
     customerPhone: input.customerPhone.trim(),
-    assignedTo: input.assignedTo.trim() || "Nepriradené",
+    assignedTo: normalizeAssignedTo(input.assignedTo),
     status: "otvorene",
     priority: input.priority,
     notes,
@@ -929,6 +930,39 @@ export async function updateTicketPriority(
   ticket.priority = priority;
   ticket.updatedAt = nowIso();
   await writeTicketStore(store);
+  return ticket;
+}
+
+export async function updateTicketAssignedTo(
+  id: string,
+  assignedTo: string,
+  opts: { author: string; botId: string },
+): Promise<Ticket | null> {
+  const store = await readTicketStore();
+  const ticket = store.tickets.find((t) => t.id === id);
+  if (!ticket) return null;
+  if (isTicketArchived(ticket)) return ticket;
+  const previous = normalizeAssignedTo(ticket.assignedTo);
+  const next = normalizeAssignedTo(assignedTo);
+  if (previous === next) return ticket;
+  const timestamp = nowIso();
+  ticket.assignedTo = next;
+  ticket.updatedAt = timestamp;
+  const text = assignedToChangeNote(previous, next, opts.botId);
+  ticket.notes.push({
+    id: randomUUID(),
+    text,
+    author: opts.author.trim() || "Servisák",
+    createdAt: timestamp,
+  });
+  await writeTicketStore(store);
+  await writeAuditSafe({
+    autor: opts.author,
+    typ: "ticket",
+    akcia: "zmenil",
+    entityId: ticket.id,
+    popis: `Ticket #${String(ticket.number).padStart(4, "0")} · ${text}`,
+  });
   return ticket;
 }
 
