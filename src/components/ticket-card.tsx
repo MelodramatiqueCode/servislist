@@ -6,6 +6,7 @@ import {
   isBotSource,
   plannedVyjazdForTicket,
   relativeAge,
+  ticketAssigneeLabel,
   ticketProgress,
   ticketSourceLabel,
   ticketStripeClass,
@@ -27,6 +28,7 @@ export function TicketCard({
   vyjazdy: Vyjazd[];
 }) {
   const source = ticketSourceLabel(ticket);
+  const assignee = ticketAssigneeLabel(ticket.assignedTo);
   const planned = plannedVyjazdForTicket(ticket.id, vyjazdy);
   const archived = isTicketArchived(ticket);
   const statusChip = planned
@@ -57,8 +59,12 @@ export function TicketCard({
         <div className="bar">
           <i style={{ width: `${ticketProgress(ticket.status)}%` }} />
         </div>
-        <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="meta">
           <span className={`chip ${statusClass}`}>{statusChip}</span>
+          <span className={`who${assignee.assigned ? "" : " muted"}`}>
+            <PersonMark />
+            <span>{assignee.label}</span>
+          </span>
           <span className={`src text-[11.5px] font-semibold ${isBotSource(source) ? "text-[var(--ink)]" : "text-[var(--ink-soft)]"}`}>
             {isBotSource(source) ? `⚡ ${source}` : source}
           </span>
@@ -88,5 +94,16 @@ export function TicketCard({
         )}
       </div>
     </article>
+  );
+}
+
+function PersonMark() {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M8 8a2.75 2.75 0 1 0 0-5.5A2.75 2.75 0 0 0 8 8Zm0 1.4c-2.55 0-5.5 1.28-5.5 2.85V14h11v-1.75c0-1.57-2.95-2.85-5.5-2.85Z"
+      />
+    </svg>
   );
 }
