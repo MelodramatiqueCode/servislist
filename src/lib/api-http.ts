@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { afterResponse } from "./after-response";
 import { authenticateBot, type BotActor } from "./bot-auth";
 
 export type ApiErrorBody = {
@@ -94,13 +95,15 @@ export async function handleBotRoute(
   try {
     actor = await requireBot(request);
     const response = await run(actor);
-    await logBotCall(actor, request.method, url.pathname, response.status, started);
+    afterResponse(() =>
+      logBotCall(actor!, request.method, url.pathname, response.status, started),
+    );
     return response;
   } catch (error) {
     const response = jsonError(error);
     const status = response.status;
     if (status >= 400) {
-      try {
+      afterResponse(async () => {
         const { captureAppError } = await import("./kontrola-store");
         await captureAppError({
           zdroj: "api",
@@ -110,12 +113,12 @@ export async function handleBotRoute(
           message: error instanceof Error ? error.message : "API chyba",
           stack: error instanceof Error ? error.stack : "",
         });
-      } catch {
-        /* ignore */
-      }
+      });
     }
     if (actor) {
-      await logBotCall(actor, request.method, url.pathname, status, started);
+      afterResponse(() =>
+        logBotCall(actor, request.method, url.pathname, status, started),
+      );
     }
     return response;
   }

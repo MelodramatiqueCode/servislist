@@ -5,11 +5,13 @@ import {
   dbReadDeviceStore,
   dbReadTicketStore,
   dbReadVyjazdStore,
+  dbUpsertTicket,
   dbWriteDeviceStore,
   dbWriteTicketStore,
   dbWriteVyjazdStore,
   isDatabaseConfigured,
 } from "./db";
+import { afterResponse } from "./after-response";
 import { getAlertConfig, isAlertsEnabled } from "./alert-config";
 import { reconcileAlerts } from "./alert-reconcile";
 import {
@@ -134,12 +136,11 @@ async function writeAuditSafe(input: {
   entityId?: string;
   popis: string;
 }) {
-  try {
+  const scheduled = afterResponse(async () => {
     const { writeAudit } = await import("./kontrola-store");
     await writeAudit(input);
-  } catch {
-    /* audit must never break a mutation */
-  }
+  });
+  if (scheduled) await scheduled;
 }
 
 function seedTickets(): TicketStore {
@@ -228,6 +229,16 @@ async function writeTicketStore(store: TicketStore) {
   }
   await ensureDir();
   await fs.writeFile(ticketsFile(), JSON.stringify(store, null, 2), "utf8");
+}
+
+/** Persist one changed ticket. Avoids rewriting ~3k Neon rows on every bot note/PATCH. */
+async function persistTicketChange(store: TicketStore, ticket: Ticket) {
+  ticketStoreCache = null;
+  if (isDatabaseConfigured()) {
+    await dbUpsertTicket(ticket, store.nextNumber);
+    return;
+  }
+  await writeTicketStore(store);
 }
 
 async function readDeviceStore(): Promise<DeviceStore> {
@@ -867,7 +878,7 @@ export async function createTicket(
 
   store.nextNumber += 1;
   store.tickets.unshift(ticket);
-  await writeTicketStore(store);
+  await persistTicketChange(store, ticket);
   await writeAuditSafe({
     autor: opts?.author || ticket.assignedTo,
     typ: "ticket",
@@ -901,7 +912,7 @@ export async function updateTicketStatus(
       createdAt: timestamp,
     });
   }
-  await writeTicketStore(store);
+  await persistTicketChange(store, ticket);
   if (status === "hotove" && previous !== "hotove") {
     await maybeWriteCloseVykaz(ticket);
     const { writeOffUsedMaterial } = await import("./sklad-store");
@@ -929,7 +940,7 @@ export async function updateTicketPriority(
   if (isTicketArchived(ticket)) return ticket;
   ticket.priority = priority;
   ticket.updatedAt = nowIso();
-  await writeTicketStore(store);
+  await persistTicketChange(store, ticket);
   return ticket;
 }
 
@@ -955,7 +966,7 @@ export async function updateTicketAssignedTo(
     author: opts.author.trim() || "Servisák",
     createdAt: timestamp,
   });
-  await writeTicketStore(store);
+  await persistTicketChange(store, ticket);
   await writeAuditSafe({
     autor: opts.author,
     typ: "ticket",
@@ -993,7 +1004,7 @@ export async function addTicketNote(
 
   ticket.notes.push(note);
   ticket.updatedAt = note.createdAt;
-  await writeTicketStore(store);
+  await persistTicketChange(store, ticket);
   await writeAuditSafe({
     autor: note.author,
     typ: "ticket",
@@ -1282,7 +1293,7 @@ export async function linkTicketToVyjazd(
       createdAt: timestamp,
     });
     ticket.updatedAt = timestamp;
-    await writeTicketStore(ticketStore);
+    await persistTicketChange(ticketStore, ticket);
   }
 
   await writeVyjazdStore(vyjazdStore);

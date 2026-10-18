@@ -774,65 +774,101 @@ export async function dbReadTicketStore(): Promise<TicketStore> {
   };
 }
 
+export function stampIso(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  const raw = String(value ?? "");
+  if (!raw) return "";
+  const t = Date.parse(raw);
+  return Number.isNaN(t) ? raw : new Date(t).toISOString();
+}
+
+/** Tickets whose updatedAt changed (or are new). Used so a note/PATCH does not rewrite the whole table. */
+export function ticketsNeedingWrite(
+  existing: { id: string; updatedAt: unknown }[],
+  next: { id: string; updatedAt: string }[],
+) {
+  const prev = new Map(
+    existing.map((row) => [row.id, stampIso(row.updatedAt)]),
+  );
+  return next.filter((ticket) => prev.get(ticket.id) !== stampIso(ticket.updatedAt));
+}
+
+async function upsertTicketRow(sql: Sql, ticket: Ticket) {
+  await sql`
+    INSERT INTO tickets (
+      id, number, title, description,
+      device_type, device_serial, device_uuid,
+      customer_name, customer_phone, assigned_to,
+      status, priority, notes, source, alert_type, archived_at, client_ref,
+      prevadzka_id, kind, created_at, updated_at
+    ) VALUES (
+      ${ticket.id},
+      ${ticket.number},
+      ${ticket.title},
+      ${ticket.description},
+      ${ticket.deviceType},
+      ${ticket.deviceSerial},
+      ${ticket.deviceUuid || ""},
+      ${ticket.customerName},
+      ${ticket.customerPhone},
+      ${ticket.assignedTo},
+      ${ticket.status},
+      ${ticket.priority},
+      ${JSON.stringify(ticket.notes)}::jsonb,
+      ${ticket.source || "manual"},
+      ${ticket.alertType ?? null},
+      ${ticket.archivedAt ?? null}::timestamptz,
+      ${ticket.clientRef || null},
+      ${ticket.prevadzkaId || ""},
+      ${ticket.kind || ""},
+      ${ticket.createdAt}::timestamptz,
+      ${ticket.updatedAt}::timestamptz
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      number = EXCLUDED.number,
+      title = EXCLUDED.title,
+      description = EXCLUDED.description,
+      device_type = EXCLUDED.device_type,
+      device_serial = EXCLUDED.device_serial,
+      device_uuid = EXCLUDED.device_uuid,
+      customer_name = EXCLUDED.customer_name,
+      customer_phone = EXCLUDED.customer_phone,
+      assigned_to = EXCLUDED.assigned_to,
+      status = EXCLUDED.status,
+      priority = EXCLUDED.priority,
+      notes = EXCLUDED.notes,
+      source = EXCLUDED.source,
+      alert_type = EXCLUDED.alert_type,
+      archived_at = COALESCE(EXCLUDED.archived_at, tickets.archived_at),
+      client_ref = EXCLUDED.client_ref,
+      prevadzka_id = EXCLUDED.prevadzka_id,
+      kind = EXCLUDED.kind,
+      updated_at = EXCLUDED.updated_at
+  `;
+}
+
+export async function dbUpsertTicket(ticket: Ticket, nextNumber?: number) {
+  await ensureSchema();
+  const sql = getSql();
+  if (nextNumber != null) {
+    await setMeta("next_ticket_number", String(nextNumber));
+  }
+  await upsertTicketRow(sql, ticket);
+}
+
 export async function dbWriteTicketStore(store: TicketStore) {
   await ensureSchema();
   const sql = getSql();
 
   await setMeta("next_ticket_number", String(store.nextNumber));
 
-  // Upsert all tickets currently in memory.
-  for (const ticket of store.tickets) {
-    await sql`
-      INSERT INTO tickets (
-        id, number, title, description,
-        device_type, device_serial, device_uuid,
-        customer_name, customer_phone, assigned_to,
-        status, priority, notes, source, alert_type, archived_at, client_ref,
-        prevadzka_id, kind, created_at, updated_at
-      ) VALUES (
-        ${ticket.id},
-        ${ticket.number},
-        ${ticket.title},
-        ${ticket.description},
-        ${ticket.deviceType},
-        ${ticket.deviceSerial},
-        ${ticket.deviceUuid || ""},
-        ${ticket.customerName},
-        ${ticket.customerPhone},
-        ${ticket.assignedTo},
-        ${ticket.status},
-        ${ticket.priority},
-        ${JSON.stringify(ticket.notes)}::jsonb,
-        ${ticket.source || "manual"},
-        ${ticket.alertType ?? null},
-        ${ticket.archivedAt ?? null}::timestamptz,
-        ${ticket.clientRef || null},
-        ${ticket.prevadzkaId || ""},
-        ${ticket.kind || ""},
-        ${ticket.createdAt}::timestamptz,
-        ${ticket.updatedAt}::timestamptz
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        number = EXCLUDED.number,
-        title = EXCLUDED.title,
-        description = EXCLUDED.description,
-        device_type = EXCLUDED.device_type,
-        device_serial = EXCLUDED.device_serial,
-        device_uuid = EXCLUDED.device_uuid,
-        customer_name = EXCLUDED.customer_name,
-        customer_phone = EXCLUDED.customer_phone,
-        assigned_to = EXCLUDED.assigned_to,
-        status = EXCLUDED.status,
-        priority = EXCLUDED.priority,
-        notes = EXCLUDED.notes,
-        source = EXCLUDED.source,
-        alert_type = EXCLUDED.alert_type,
-        archived_at = COALESCE(EXCLUDED.archived_at, tickets.archived_at),
-        client_ref = EXCLUDED.client_ref,
-        prevadzka_id = EXCLUDED.prevadzka_id,
-        kind = EXCLUDED.kind,
-        updated_at = EXCLUDED.updated_at
-    `;
+  const rows = await sql`SELECT id, updated_at FROM tickets`;
+  const existing = rows.map((row) => {
+    const r = row as Record<string, unknown>;
+    return { id: String(r.id), updatedAt: r.updated_at };
+  });
+  for (const ticket of ticketsNeedingWrite(existing, store.tickets)) {
+    await upsertTicketRow(sql, ticket);
   }
 }
 

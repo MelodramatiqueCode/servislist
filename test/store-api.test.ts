@@ -183,6 +183,15 @@ describe("bot API store", () => {
     assert.equal(noted.created, true);
     const lastNote = noted.ticket.notes[noted.ticket.notes.length - 1];
     assert.equal(lastNote?.author, "Servis bot");
+    const noteStarted = Date.now();
+    const timed = await botAddNote(
+      created.ticket.id,
+      { text: "Druhý záznam pre meranie.", clientRef: "note-timing" },
+      { id: "hotline", name: "Hotline bot" },
+    );
+    const noteMs = Date.now() - noteStarted;
+    assert.equal(timed.created, true);
+    assert.ok(noteMs < 2000, `botAddNote took ${noteMs}ms`);
 
     const notedAgain = await botAddNote(
       created.ticket.id,
