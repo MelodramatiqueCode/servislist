@@ -783,10 +783,10 @@ export function stampIso(value: unknown): string {
 }
 
 /** Tickets whose updatedAt changed (or are new). Used so a note/PATCH does not rewrite the whole table. */
-export function ticketsNeedingWrite(
+export function ticketsNeedingWrite<T extends { id: string; updatedAt: string }>(
   existing: { id: string; updatedAt: unknown }[],
-  next: { id: string; updatedAt: string }[],
-) {
+  next: T[],
+): T[] {
   const prev = new Map(
     existing.map((row) => [row.id, stampIso(row.updatedAt)]),
   );
