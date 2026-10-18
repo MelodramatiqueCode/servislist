@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import { afterResponse } from "./after-response";
 import { serializeDevice, serializePrevadzkaProfile, serializeTicket, serializeVyjazd, serializeVyjazdSummary } from "./api-serialize";
 import { ApiError, asRecord, queryString } from "./api-http";
 import type { BotActor } from "./bot-auth";
@@ -47,11 +48,13 @@ import type { Ticket, TicketSource, VyjazdStatus } from "./types";
 import { VYJAZD_STATUS_LABELS } from "./types";
 
 function safeRevalidate(path: string) {
-  try {
-    revalidatePath(path);
-  } catch {
-    // testy a skripty mimo Next.js request kontextu
-  }
+  afterResponse(() => {
+    try {
+      revalidatePath(path);
+    } catch {
+      // testy a skripty mimo Next.js request kontextu
+    }
+  });
 }
 
 function revalidateTicketPaths(ticket: Ticket) {
