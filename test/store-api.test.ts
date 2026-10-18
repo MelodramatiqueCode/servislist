@@ -6,6 +6,11 @@ import { after, before, describe, test } from "node:test";
 import type { ServiceDevice } from "../src/lib/types";
 import type * as Store from "../src/lib/store";
 import type * as BotApi from "../src/lib/bot-api";
+import type * as KontrolaStore from "../src/lib/kontrola-store";
+import {
+  ASSIGNED_TO_DEFAULT,
+  assignedToChangeNote,
+} from "../src/lib/ticket-input";
 
 const previous = {
   dataDir: process.env.SERVISLIST_DATA_DIR,
@@ -21,6 +26,8 @@ let botAddNote: typeof BotApi.botAddNote;
 let botCloseTicket: typeof BotApi.botCloseTicket;
 let botListTickets: typeof BotApi.botListTickets;
 let botLinkTicket: typeof BotApi.botLinkTicket;
+let botPatchTicket: typeof BotApi.botPatchTicket;
+let kontrola: typeof KontrolaStore;
 
 const device: ServiceDevice = {
   uuid: "uuid-1",
@@ -125,6 +132,8 @@ before(async () => {
   botCloseTicket = api.botCloseTicket;
   botListTickets = api.botListTickets;
   botLinkTicket = api.botLinkTicket;
+  botPatchTicket = api.botPatchTicket;
+  kontrola = await import("../src/lib/kontrola-store");
 });
 
 after(() => {
@@ -223,5 +232,71 @@ describe("bot API store", () => {
     const vyjazd = await store.getVyjazdByRef("V-0001");
     assert.ok(vyjazd);
     assert.equal(vyjazd.ticketId, ticket.id);
+  });
+
+  test("PATCH assignedTo writes history + audit; same value is no-op", async () => {
+    const created = await botCreateTicket(
+      {
+        title: "Priradiť servisáka",
+        description: "Hotline predáva ticket.",
+        deviceUuid: "uuid-1",
+        assignedTo: "Nepriradené",
+        clientRef: "hotline-assigned-1",
+      },
+      actor,
+    );
+    assert.equal(created.ticket.assignedTo, ASSIGNED_TO_DEFAULT);
+
+    const patched = await botPatchTicket(
+      created.ticket.id,
+      { assignedTo: "Martin" },
+      actor,
+    );
+    assert.equal(patched.changed, true);
+    assert.equal(patched.ticket.assignedTo, "Martin");
+    const expected = assignedToChangeNote(
+      ASSIGNED_TO_DEFAULT,
+      "Martin",
+      "hotline",
+    );
+    assert.ok(patched.ticket.notes.some((n) => n.text === expected));
+    assert.equal(
+      patched.ticket.notes.find((n) => n.text === expected)?.author,
+      "Hotline bot",
+    );
+
+    const same = await botPatchTicket(
+      created.ticket.id,
+      { assignedTo: " Martin " },
+      actor,
+    );
+    assert.equal(same.changed, false);
+    assert.equal(
+      same.ticket.notes.filter((n) => n.text.includes("Servisák zmenený:")).length,
+      1,
+    );
+
+    const servis = await botPatchTicket(
+      created.ticket.id,
+      { assignedTo: "Peter" },
+      { id: "servis", name: "Servis bot" },
+    );
+    assert.equal(servis.changed, true);
+    assert.equal(servis.ticket.assignedTo, "Peter");
+    assert.ok(
+      servis.ticket.notes.some(
+        (n) => n.text === assignedToChangeNote("Martin", "Peter", "servis"),
+      ),
+    );
+
+    const audit = await kontrola.listAudit({ typ: "ticket" });
+    assert.ok(
+      audit.some(
+        (row) =>
+          row.akcia === "zmenil" &&
+          row.popis.includes(expected) &&
+          row.entityId === created.ticket.id,
+      ),
+    );
   });
 });

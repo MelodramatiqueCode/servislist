@@ -17,6 +17,7 @@ import {
   listPrevadzkaProfiles,
   listTickets,
   listVyjazdy,
+  updateTicketAssignedTo,
   updateTicketPriority,
   updateTicketStatus,
 } from "./store";
@@ -35,6 +36,7 @@ import { findDevicesForPrevadzka } from "./prevadzky";
 import {
   applyDeviceToTicketFields,
   collectTicketCreateFields,
+  normalizeAssignedTo,
   normalizePriority,
   parseTicketStatus,
   TICKET_PRIORITIES,
@@ -368,6 +370,21 @@ export async function botPatchTicket(
     const result = await botChangeStatus(ref, body, actor);
     ticket = (await getTicketByRef(ticket.id)) ?? ticket;
     changed = changed || result.changed;
+  }
+
+  if (body.assignedTo !== undefined) {
+    const assignedTo = normalizeAssignedTo(body.assignedTo);
+    if (normalizeAssignedTo(ticket.assignedTo) !== assignedTo) {
+      const updated = await updateTicketAssignedTo(ticket.id, assignedTo, {
+        author: actor.name,
+        botId: actor.id,
+      });
+      if (updated) {
+        ticket = updated;
+        changed = true;
+        revalidateTicketPaths(ticket);
+      }
+    }
   }
 
   if (body.priority !== undefined) {

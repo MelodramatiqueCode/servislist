@@ -51,6 +51,21 @@ export function applyDeviceToTicketFields(
   };
 }
 
+/** Same rule as POST /api/v1/tickets → createTicket. */
+export const ASSIGNED_TO_DEFAULT = "Nepriradené";
+
+export function normalizeAssignedTo(raw: unknown): string {
+  return String(raw ?? "").trim() || ASSIGNED_TO_DEFAULT;
+}
+
+export function assignedToChangeNote(
+  previous: string,
+  next: string,
+  botId: string,
+) {
+  return `Servisák zmenený: ${previous} → ${next} (bot: ${botId})`;
+}
+
 export function normalizePriority(raw: unknown): TicketPriority {
   const value = String(raw ?? "").trim();
   if ((TICKET_PRIORITIES as string[]).includes(value)) {
@@ -117,7 +132,7 @@ export function collectTicketCreateFields(input: {
     deviceUuid: str(input.deviceUuid),
     customerName: str(input.customerName) || prevadzka,
     customerPhone: str(input.customerPhone),
-    assignedTo: str(input.assignedTo),
+    assignedTo: normalizeAssignedTo(input.assignedTo),
     priority: normalizePriority(input.priority),
     clientRef: str(input.clientRef),
   };
