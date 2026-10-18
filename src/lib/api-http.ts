@@ -94,14 +94,16 @@ export async function handleBotRoute(
   let actor: BotActor | null = null;
   try {
     actor = await requireBot(request);
-    const response = await run(actor);
+    const caller = actor;
+    const response = await run(caller);
     afterResponse(() =>
-      logBotCall(actor!, request.method, url.pathname, response.status, started),
+      logBotCall(caller, request.method, url.pathname, response.status, started),
     );
     return response;
   } catch (error) {
     const response = jsonError(error);
     const status = response.status;
+    const caller = actor;
     if (status >= 400) {
       afterResponse(async () => {
         const { captureAppError } = await import("./kontrola-store");
@@ -109,15 +111,15 @@ export async function handleBotRoute(
           zdroj: "api",
           route: url.pathname,
           status,
-          bot: actor?.name ?? "",
+          bot: caller?.name ?? "",
           message: error instanceof Error ? error.message : "API chyba",
           stack: error instanceof Error ? error.stack : "",
         });
       });
     }
-    if (actor) {
+    if (caller) {
       afterResponse(() =>
-        logBotCall(actor, request.method, url.pathname, status, started),
+        logBotCall(caller, request.method, url.pathname, status, started),
       );
     }
     return response;
