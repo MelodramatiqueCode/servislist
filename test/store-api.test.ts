@@ -308,4 +308,28 @@ describe("bot API store", () => {
       ),
     );
   });
+
+  test("ElevenLabs hotline píše ticket a audit pod vlastným menom", async () => {
+    const elevenlabs = { id: "elevenlabs", name: "ElevenLabs hotline" };
+    const created = await botCreateTicket(
+      {
+        title: "Hlasový ticket",
+        description: "Massiva Hotline volala.",
+        deviceUuid: "uuid-1",
+        clientRef: "elevenlabs-1",
+      },
+      elevenlabs,
+    );
+    assert.equal(created.created, true);
+    assert.equal(created.ticket.source, "manual");
+    assert.equal(created.ticket.notes[0].author, "ElevenLabs hotline");
+
+    const audit = await kontrola.listAudit({ typ: "ticket" });
+    const row = audit.find(
+      (entry) =>
+        entry.akcia === "vytvoril" && entry.entityId === created.ticket.id,
+    );
+    assert.ok(row);
+    assert.equal(row?.autor, "elevenlabs_bot");
+  });
 });

@@ -2,6 +2,7 @@ export const AUDIT_AUTORI = [
   "martin",
   "servis_bot",
   "hotline_bot",
+  "elevenlabs_bot",
   "automatika",
 ] as const;
 export type AuditAutor = (typeof AUDIT_AUTORI)[number];
@@ -84,6 +85,7 @@ export function parseAuditAutor(raw: string | undefined | null): AuditAutor {
     return value as AuditAutor;
   }
   const lower = value.toLowerCase();
+  if (lower.includes("elevenlabs")) return "elevenlabs_bot";
   if (lower.includes("hotline")) return "hotline_bot";
   if (lower.includes("servis") || lower.includes("bot")) return "servis_bot";
   if (lower.includes("auto") || lower.includes("balena") || lower.includes("sync")) {
@@ -95,6 +97,7 @@ export function parseAuditAutor(raw: string | undefined | null): AuditAutor {
 export function autorLabel(autor: AuditAutor) {
   if (autor === "servis_bot") return "Servis bot";
   if (autor === "hotline_bot") return "Hotline bot";
+  if (autor === "elevenlabs_bot") return "ElevenLabs hotline";
   if (autor === "automatika") return "automatika";
   return "Martin";
 }

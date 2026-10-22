@@ -64,6 +64,8 @@ const MACHINE_AUTHORS = new Set([
   "automat",
   "servis bot",
   "hotline bot",
+  "elevenlabs hotline",
+  "elevenlabs",
 ]);
 
 export function isMachineAuthor(author: string) {

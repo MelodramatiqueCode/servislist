@@ -69,6 +69,10 @@ describe("pulse helpers", () => {
       "Hotline bot",
     );
     assert.equal(
+      ticketSourceLabel(ticket({ assignedTo: "ElevenLabs hotline" })),
+      "ElevenLabs hotline",
+    );
+    assert.equal(
       ticketSourceLabel(ticket({ source: "manual", assignedTo: "Martin" })),
       "manuálne",
     );

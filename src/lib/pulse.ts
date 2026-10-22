@@ -7,6 +7,7 @@ export const PULSE_ACCENT = "#ff4d1a";
 const SOURCE_BOT_LABELS = {
   servis: "Servis bot",
   hotline: "Hotline bot",
+  elevenlabs: "ElevenLabs hotline",
 } as const;
 
 export function ticketProgress(status: TicketStatus) {
@@ -42,12 +43,17 @@ export function ticketSourceLabel(ticket: Pick<Ticket, "source" | "assignedTo" |
   ]
     .join(" ")
     .toLowerCase();
+  if (hay.includes("elevenlabs")) return SOURCE_BOT_LABELS.elevenlabs;
   if (hay.includes("hotline")) return SOURCE_BOT_LABELS.hotline;
   return SOURCE_BOT_LABELS.servis;
 }
 
 export function isBotSource(label: string) {
-  return label === SOURCE_BOT_LABELS.servis || label === SOURCE_BOT_LABELS.hotline;
+  return (
+    label === SOURCE_BOT_LABELS.servis ||
+    label === SOURCE_BOT_LABELS.hotline ||
+    label === SOURCE_BOT_LABELS.elevenlabs
+  );
 }
 
 export function ticketAssigneeLabel(assignedTo: string | undefined) {

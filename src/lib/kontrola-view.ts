@@ -148,7 +148,9 @@ export async function kontrolaSnapshot() {
   const staleApproval = approvals.find((a) => a.stale);
   const writesLastHour = audit.filter(
     (row) =>
-      (row.autor === "servis_bot" || row.autor === "hotline_bot") &&
+      (row.autor === "servis_bot" ||
+        row.autor === "hotline_bot" ||
+        row.autor === "elevenlabs_bot") &&
       new Date(row.at).getTime() >= new Date(hourAgo).getTime(),
   ).length;
   const apiErrors = errors.filter((e) => e.zdroj === "api");
@@ -211,6 +213,11 @@ export async function kontrolaSnapshot() {
   const botIds = [
     { id: "servis", autor: "servis_bot" as const, name: "Servis bot" },
     { id: "hotline", autor: "hotline_bot" as const, name: "Hotline bot" },
+    {
+      id: "elevenlabs",
+      autor: "elevenlabs_bot" as const,
+      name: "ElevenLabs hotline",
+    },
   ];
   const bots = botIds.map((bot) => {
     const writes = audit.filter((r) => r.autor === bot.autor);

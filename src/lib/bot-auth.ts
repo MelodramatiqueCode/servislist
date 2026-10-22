@@ -33,6 +33,12 @@ const BUILTIN_BOTS: Array<{
     tokenEnv: "HOTLINE_BOT_API_TOKEN",
     hashEnv: "HOTLINE_BOT_API_TOKEN_HASH",
   },
+  {
+    id: "elevenlabs",
+    name: "ElevenLabs hotline",
+    tokenEnv: "ELEVENLABS_BOT_API_TOKEN",
+    hashEnv: "ELEVENLABS_BOT_API_TOKEN_HASH",
+  },
 ];
 
 export function hashApiToken(token: string) {
