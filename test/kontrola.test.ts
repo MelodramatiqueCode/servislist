@@ -25,6 +25,8 @@ describe("kontrola helpers", () => {
   test("maps bot names and pending flags", () => {
     assert.equal(parseAuditAutor("Hotline bot"), "hotline_bot");
     assert.equal(parseAuditAutor("Servis bot"), "servis_bot");
+    assert.equal(parseAuditAutor("ElevenLabs hotline"), "elevenlabs_bot");
+    assert.equal(parseAuditAutor("elevenlabs"), "elevenlabs_bot");
     assert.equal(parseAuditAutor("Martin"), "martin");
     assert.equal(wantsPendingNavrh({ pending: true }), true);
     assert.equal(wantsPendingNavrh({ navrh: "true" }), true);

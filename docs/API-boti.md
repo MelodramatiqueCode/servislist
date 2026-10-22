@@ -1,4 +1,4 @@
-# API pre botov (Servis bot, Hotline bot)
+# API pre botov (Servis bot, Hotline bot, ElevenLabs hotline)
 
 Základná URL: `https://servislist.vercel.app`
 
@@ -10,12 +10,13 @@ Všetky endpointy sú pod `/api/v1`. Vyžadujú Bearer token. UI a API používa
 Authorization: Bearer <token bota>
 ```
 
-Každý zápis sa v tickete ukáže s autorom bota (napr. `Hotline bot` alebo `Servis bot`) v poznámkach.
+Každý zápis sa v tickete ukáže s autorom bota (napr. `Hotline bot`, `Servis bot` alebo `ElevenLabs hotline`) v poznámkach. Ticket `source` ostáva `manual` (rovnako ako u Hotline bota). Audit a aktivita botov na `/kontrola` idú pod vlastným menom bota.
 
 | Bot | `id` | Autor v UI | Env premenná s tokenom | Env s SHA-256 hashom |
 |---|---|---|---|---|
 | Servis bot | `servis` | Servis bot | `SERVIS_BOT_API_TOKEN` | `SERVIS_BOT_API_TOKEN_HASH` |
 | Hotline bot | `hotline` | Hotline bot | `HOTLINE_BOT_API_TOKEN` | `HOTLINE_BOT_API_TOKEN_HASH` |
+| ElevenLabs hotline | `elevenlabs` | ElevenLabs hotline | `ELEVENLABS_BOT_API_TOKEN` | `ELEVENLABS_BOT_API_TOKEN_HASH` |
 
 Stačí jedna z dvojice (plaintext **alebo** hash). Tokeny dávaj len do Vercel Environment Variables, nikdy do gitu.
 
@@ -42,7 +43,7 @@ Odporúčaný postup (nemení sa v tomto PR, nastaví Martin v dashboarde):
 3. Bot posiela **oba** headre:
 
 ```http
-Authorization: Bearer <SERVIS_BOT_API_TOKEN alebo HOTLINE_BOT_API_TOKEN>
+Authorization: Bearer <SERVIS_BOT_API_TOKEN, HOTLINE_BOT_API_TOKEN alebo ELEVENLABS_BOT_API_TOKEN>
 x-vercel-protection-bypass: <VERCEL_AUTOMATION_BYPASS_SECRET>
 ```
 
@@ -99,6 +100,8 @@ curl -sS https://servislist.vercel.app/api/v1 \
 ```json
 { "ok": true, "version": 1, "bot": "Hotline bot", "botId": "hotline" }
 ```
+
+ElevenLabs hotline vráti `"bot": "ElevenLabs hotline", "botId": "elevenlabs"`. Má rovnaké práva ako Hotline bot (čítanie prevádzok, vytváranie a úprava ticketov). Bez `ELEVENLABS_BOT_API_TOKEN` (ani hashu) je táto identita vypnutá.
 
 ### `GET /api/v1/tickets` — zoznam
 
@@ -591,9 +594,11 @@ Project **servislist** → Settings → Environment Variables (Production, ideá
 |---|---|---|
 | `SERVIS_BOT_API_TOKEN` | Sensitive | Dlhý náhodný reťazec, napr. `openssl rand -hex 32` |
 | `HOTLINE_BOT_API_TOKEN` | Sensitive | Iný náhodný reťazec |
+| `ELEVENLABS_BOT_API_TOKEN` | Sensitive | Token pre Massiva Hotline (ElevenLabs). Ak chýba, identita je vypnutá. |
 | `SERVIS_BOT_API_TOKEN_HASH` | Sensitive | Voliteľné namiesto plaintext tokenu |
 | `HOTLINE_BOT_API_TOKEN_HASH` | Sensitive | Voliteľné namiesto plaintext tokenu |
-| `API_BOT_DISABLED` | Plain | Voliteľné; `servis` / `hotline` na vypnutie |
+| `ELEVENLABS_BOT_API_TOKEN_HASH` | Sensitive | Voliteľné namiesto plaintext tokenu |
+| `API_BOT_DISABLED` | Plain | Voliteľné; `servis` / `hotline` / `elevenlabs` na vypnutie |
 | `API_BOT_TOKENS` | Sensitive | Voliteľné JSON extra botov `[{id,name,tokenHash}]` |
 | `DATABASE_URL` | už je | Neon; nová schema je aditívna, `ensureSchema` ju doplní pri prvom requeste |
 

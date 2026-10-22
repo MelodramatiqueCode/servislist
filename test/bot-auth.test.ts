@@ -15,6 +15,8 @@ const ENV_KEYS = [
   "SERVIS_BOT_API_TOKEN_HASH",
   "HOTLINE_BOT_API_TOKEN",
   "HOTLINE_BOT_API_TOKEN_HASH",
+  "ELEVENLABS_BOT_API_TOKEN",
+  "ELEVENLABS_BOT_API_TOKEN_HASH",
   "API_BOT_TOKENS",
   "API_BOT_DISABLED",
   "DATABASE_URL",
@@ -63,22 +65,39 @@ describe("bot-auth", () => {
     resetEnv();
     process.env.SERVIS_BOT_API_TOKEN = "servis-secret";
     process.env.HOTLINE_BOT_API_TOKEN_HASH = hashApiToken("hotline-secret");
+    process.env.ELEVENLABS_BOT_API_TOKEN = "elevenlabs-secret";
     const bots = loadEnvBots();
-    assert.equal(bots.length, 2);
+    assert.equal(bots.length, 3);
     assert.equal(bots[0].id, "servis");
     assert.equal(bots[1].name, "Hotline bot");
+    assert.equal(bots[2].id, "elevenlabs");
+    assert.equal(bots[2].name, "ElevenLabs hotline");
+  });
+
+  test("bez ELEVENLABS_BOT_API_TOKEN je identita vypnutá", () => {
+    resetEnv();
+    process.env.SERVIS_BOT_API_TOKEN = "servis-secret";
+    const bots = loadEnvBots();
+    assert.equal(bots.some((bot) => bot.id === "elevenlabs"), false);
   });
 
   test("overí plaintext aj hash token", async () => {
     resetEnv();
     process.env.SERVIS_BOT_API_TOKEN = "servis-secret";
     process.env.HOTLINE_BOT_API_TOKEN_HASH = hashApiToken("hotline-secret");
+    process.env.ELEVENLABS_BOT_API_TOKEN = "elevenlabs-secret";
 
     const servis = await authenticateBot("Bearer servis-secret");
     assert.deepEqual(servis, { id: "servis", name: "Servis bot" });
 
     const hotline = await authenticateBot("Bearer hotline-secret");
     assert.deepEqual(hotline, { id: "hotline", name: "Hotline bot" });
+
+    const elevenlabs = await authenticateBot("Bearer elevenlabs-secret");
+    assert.deepEqual(elevenlabs, {
+      id: "elevenlabs",
+      name: "ElevenLabs hotline",
+    });
 
     assert.equal(await authenticateBot("Bearer zly"), null);
     assert.equal(await authenticateBot("Bearer "), null);
