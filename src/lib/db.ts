@@ -33,7 +33,10 @@ import {
 import {
   DELETE_TEST_TICKET,
   DELETE_TEST_TICKET_META_KEY,
+  DELETE_TEST_TICKETS_OCT23,
+  DELETE_TEST_TICKETS_OCT23_META_KEY,
   isDeletedTicketId,
+  shouldDeleteOct23TestTicket,
   shouldDeleteTestTicket,
 } from "./ticket-delete";
 
@@ -85,6 +88,7 @@ export async function ensureSchema() {
       if (String(versionRows[0]?.value ?? "") === SCHEMA_VERSION) {
         await deleteStaleOpenVyjazdyOnce(sql);
         await deleteTestTicket3392Once(sql);
+        await deleteTestTickets3400And3402Once(sql);
         return;
       }
       await sql`
@@ -506,6 +510,7 @@ export async function ensureSchema() {
       `;
       await deleteStaleOpenVyjazdyOnce(sql);
       await deleteTestTicket3392Once(sql);
+      await deleteTestTickets3400And3402Once(sql);
     })().catch((error) => {
       schemaReady = null;
       throw error;
@@ -786,6 +791,91 @@ async function deleteTestTicket3392Once(sql: Sql) {
   }
 
   await setMeta(DELETE_TEST_TICKET_META_KEY, String(deletedCount));
+}
+
+/**
+ * Jednorazové úplné zmazanie skúšobných ticketov T-3400 a T-3402
+ * (pokyn Martina 23. 10. 2026). Každý ticket sa posúdi samostatne:
+ * len presné id + číslo + text a prevádzka JLM Liptovský Mikuláš.
+ * Zmaže ticket a jeho materiál a výkaz; odkazy z výjazdov a udalostí
+ * zariadení len odpojí. Ak by na ticket viseli skladové pohyby, ten
+ * ticket nezmaže. Audit log ostáva, pribudne záznam o zmazaní.
+ */
+async function deleteTestTickets3400And3402Once(sql: Sql) {
+  const existing = await getMeta(DELETE_TEST_TICKETS_OCT23_META_KEY);
+  if (existing !== "") return;
+
+  const outcomes: Record<string, string> = {};
+
+  for (const spec of DELETE_TEST_TICKETS_OCT23) {
+    const id: string = spec.id;
+    const number: number = spec.number;
+    const rows = await sql`
+      SELECT id, number, title, customer_name FROM tickets WHERE id = ${id} LIMIT 1
+    `;
+    const row = rows[0] as
+      | { id: string; number: number; title: string; customer_name: string }
+      | undefined;
+    if (!row) {
+      outcomes[String(number)] = "missing";
+      continue;
+    }
+    const title = String(row.title ?? "");
+    const customerName = String(row.customer_name ?? "");
+    if (
+      !shouldDeleteOct23TestTicket(spec, {
+        id: String(row.id),
+        number: Number(row.number),
+        title,
+        customerName,
+      })
+    ) {
+      outcomes[String(number)] = "skipped_mismatch";
+      continue;
+    }
+    const pohyby = await sql`
+      SELECT 1 FROM sklad_pohyby WHERE ticket_id = ${id} LIMIT 1
+    `;
+    if (pohyby.length > 0) {
+      outcomes[String(number)] = "skipped_sklad_pohyby";
+      continue;
+    }
+
+    const results = await sql.transaction((txn) => [
+      txn`
+        DELETE FROM tickets
+        WHERE id = ${id} AND number = ${number} AND title = ${title}
+        RETURNING id
+      `,
+      txn`DELETE FROM material WHERE ticket_id = ${id}`,
+      txn`DELETE FROM vykaz_prace WHERE ticket_id = ${id}`,
+      txn`UPDATE vyjazdy SET ticket_id = '' WHERE ticket_id = ${id}`,
+      txn`UPDATE device_events SET ticket_id = '' WHERE ticket_id = ${id}`,
+    ]);
+    const deletedCount = (results[0] as unknown[]).length;
+
+    if (deletedCount > 0) {
+      await sql`
+        INSERT INTO audit_log (
+          id, at, autor, typ, akcia, entity_id, popis, diff, request_id
+        ) VALUES (
+          ${randomUUID()},
+          NOW(),
+          'martin',
+          'ticket',
+          'delete',
+          ${id},
+          ${`Zmazaný skúšobný ticket T-${number} „${title}“ (pokyn Martina 23. 10. 2026)`},
+          ${JSON.stringify({ id, number, title, customerName })}::jsonb,
+          ${DELETE_TEST_TICKETS_OCT23_META_KEY}
+        )
+      `;
+    }
+
+    outcomes[String(number)] = String(deletedCount);
+  }
+
+  await setMeta(DELETE_TEST_TICKETS_OCT23_META_KEY, JSON.stringify(outcomes));
 }
 
 function rowToTicket(row: Record<string, unknown>): Ticket {
