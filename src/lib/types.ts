@@ -77,6 +77,10 @@ export type ServiceDevice = {
   storageTotal: number | null;
   isUndervolted: boolean;
   note: string;
+  /** ISO — zariadenie už Balena nevracia. Archív, nemazať. */
+  removedFromBalenaAt?: string;
+  /** Novšie/nahrádzajúce UUID na tej istej prevádzke. */
+  replacedByUuid?: string;
 };
 
 export type TicketSource = "manual" | "auto";

@@ -1,3 +1,4 @@
+import { primaryStoreDevice } from "./device-lifecycle";
 import { deviceStoreLabel, prevadzkaKey } from "./vyjazd-stops";
 import type { ServiceDevice, Ticket, Vyjazd } from "./types";
 
@@ -28,7 +29,7 @@ export function buildPrevadzky(devices: ServiceDevice[]): Prevadzka[] {
 
   return [...groups.entries()]
     .map(([key, list]) => {
-      const primary = list[0];
+      const primary = primaryStoreDevice(list) || list[0];
       return {
         key,
         label: deviceStoreLabel(primary),

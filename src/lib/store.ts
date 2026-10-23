@@ -28,6 +28,13 @@ import {
   isBalenaConfigured,
 } from "./balena";
 import { normalizeBalenaDevice, matchesHealthFilter, isDiskFull, isHot } from "./parse-device";
+import {
+  inheritStoreFields,
+  pairReplacementDevices,
+  planRemovedFromBalena,
+  sortStoreDevices,
+} from "./device-lifecycle";
+import { mergePrefixDuplicateStores } from "./prevadzka-merge";
 import type {
   BalenaDeviceRaw,
   CreateTicketInput,
@@ -313,6 +320,8 @@ function hydrateDevice(device: Partial<ServiceDevice> & Pick<ServiceDevice, "uui
     storageTotal: device.storageTotal ?? null,
     isUndervolted: Boolean(device.isUndervolted),
     note: device.note ?? "",
+    removedFromBalenaAt: device.removedFromBalenaAt,
+    replacedByUuid: device.replacedByUuid,
   };
 }
 
@@ -503,13 +512,20 @@ async function runBalenaSync(options?: {
   if (!options?.force && existing.syncedAt) {
     const age = Date.now() - new Date(existing.syncedAt).getTime();
     if (age >= 0 && age < STALE_MS) {
-      const online = existing.devices.filter((d) => d.isOnline).length;
+      const online = existing.devices.filter((d) =>
+        matchesHealthFilter(d, "online"),
+      ).length;
+      const total = existing.devices.filter((d) =>
+        matchesHealthFilter(d, "all"),
+      ).length;
       return {
         ok: true,
         configured: true,
-        count: existing.devices.length,
+        count: total,
         online,
-        offline: existing.devices.length - online,
+        offline: existing.devices.filter((d) =>
+          matchesHealthFilter(d, "offline"),
+        ).length,
         added: 0,
         updated: 0,
         alertsCreated: 0,
@@ -523,13 +539,17 @@ async function runBalenaSync(options?: {
   const holder = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const leased = await acquireSyncLease(holder);
   if (!leased) {
-    const online = existing.devices.filter((d) => d.isOnline).length;
+    const online = existing.devices.filter((d) =>
+      matchesHealthFilter(d, "online"),
+    ).length;
     return {
       ok: true,
       configured: true,
-      count: existing.devices.length,
+      count: existing.devices.filter((d) => matchesHealthFilter(d, "all")).length,
       online,
-      offline: existing.devices.length - online,
+      offline: existing.devices.filter((d) =>
+        matchesHealthFilter(d, "offline"),
+      ).length,
       added: 0,
       updated: 0,
       alertsCreated: 0,
@@ -562,8 +582,11 @@ async function runBalenaSync(options?: {
         city: normalized.city || prev.city,
         address: normalized.address || prev.address,
         phone: normalized.phone || prev.phone,
+        note: normalized.note || prev.note,
         importedAt: prev.importedAt || syncedAt,
         lastSyncedAt: syncedAt,
+        removedFromBalenaAt: undefined,
+        replacedByUuid: prev.replacedByUuid,
       };
 
       if (
@@ -581,7 +604,24 @@ async function runBalenaSync(options?: {
       byUuid.set(raw.uuid, next);
     }
 
-    const devices = sortDevices([...byUuid.values()]);
+    const remoteUuids = remote.map((row) => row.uuid);
+    const ghosted = planRemovedFromBalena({
+      remoteUuids,
+      devices: inheritStoreFields([...byUuid.values()]),
+      now: syncedAt,
+    });
+    if (ghosted.skipped) {
+      await writeAuditSafe({
+        autor: "automatika",
+        typ: "nastavenia",
+        akcia: "sync_alert",
+        popis:
+          ghosted.skipped === "empty_remote"
+            ? "Balena sync: prázdny zoznam zariadení. Duchov som neoznačoval."
+            : `Balena sync: remote vrátilo ${remote.length} zariadení, chýbalo by ${ghosted.wouldMark.length} (>10 %). Nič som neoznačil ako odstránené.`,
+      });
+    }
+    const devices = sortDevices(pairReplacementDevices(ghosted.devices));
     const alerts = await reconcileDeviceAlerts(existing.devices, devices);
 
     const store: DeviceStore = {
@@ -591,15 +631,18 @@ async function runBalenaSync(options?: {
       devices,
     };
     await writeDeviceStore(store);
-    await backfillPrevadzkyFromDevices(devices);
+    await backfillPrevadzkyFromDevices(
+      devices.filter((d) => !d.removedFromBalenaAt),
+    );
+    await mergePrefixDuplicateStores(devices);
 
-    const online = devices.filter((d) => d.isOnline).length;
+    const online = devices.filter((d) => matchesHealthFilter(d, "online")).length;
     return {
       ok: true,
       configured: true,
-      count: devices.length,
+      count: devices.filter((d) => matchesHealthFilter(d, "all")).length,
       online,
-      offline: devices.length - online,
+      offline: devices.filter((d) => matchesHealthFilter(d, "offline")).length,
       added,
       updated,
       alertsCreated: alerts.created,
@@ -660,6 +703,8 @@ export async function listDevices(filters?: {
     devices = devices.filter((d) =>
       matchesHealthFilter(d, health as DeviceHealthFilter),
     );
+  } else {
+    devices = devices.filter((d) => matchesHealthFilter(d, "all"));
   }
 
   if (health === "long_offline") {
@@ -705,20 +750,20 @@ export async function getDevice(uuid: string): Promise<ServiceDevice | null> {
 export async function getDeviceStats() {
   const store = await readDeviceStore();
   const all = store.devices;
-  const partners = new Set(all.map((d) => d.partner).filter(Boolean));
+  const active = all.filter((d) => matchesHealthFilter(d, "all"));
+  const partners = new Set(active.map((d) => d.partner).filter(Boolean));
   return {
-    total: all.length,
-    online: all.filter((d) => d.isOnline).length,
-    offline: all.filter((d) => !d.isOnline).length,
-    undervolt: all.filter((d) => d.isUndervolted).length,
-    hot: all.filter((d) => isHot(d, getAlertConfig().hotOpenC)).length,
-    disk: all.filter((d) => isDiskFull(d)).length,
-    alerts: all.filter((d) =>
-      matchesHealthFilter(d, "alerts"),
-    ).length,
-    vpnDown: all.filter((d) => matchesHealthFilter(d, "vpn_down")).length,
+    total: active.length,
+    online: active.filter((d) => matchesHealthFilter(d, "online")).length,
+    offline: active.filter((d) => matchesHealthFilter(d, "offline")).length,
+    undervolt: active.filter((d) => matchesHealthFilter(d, "undervolt")).length,
+    hot: active.filter((d) => matchesHealthFilter(d, "hot")).length,
+    disk: active.filter((d) => matchesHealthFilter(d, "disk")).length,
+    alerts: active.filter((d) => matchesHealthFilter(d, "alerts")).length,
+    vpnDown: active.filter((d) => matchesHealthFilter(d, "vpn_down")).length,
     longOffline: all.filter((d) => matchesHealthFilter(d, "long_offline")).length,
-    test: all.filter((d) => matchesHealthFilter(d, "test")).length,
+    test: active.filter((d) => matchesHealthFilter(d, "test")).length,
+    removed: all.filter((d) => matchesHealthFilter(d, "removed")).length,
     partners: [...partners].sort((a, b) => a.localeCompare(b, "sk")),
     importedAt: store.importedAt,
     syncedAt: store.syncedAt || "",
@@ -1500,7 +1545,9 @@ export async function getVyjazdStats() {
 }
 
 export async function ensurePrevadzkyCatalog() {
-  const devices = (await readDeviceStore()).devices;
+  const devices = (await readDeviceStore()).devices.filter(
+    (d) => !d.removedFromBalenaAt,
+  );
   return backfillPrevadzkyFromDevices(devices);
 }
 
@@ -1647,14 +1694,17 @@ export function matchDevicesForPrevadzka(
   all: ServiceDevice[],
   uuids: string[],
 ) {
-  const linked = all.filter((d) => uuids.includes(d.uuid));
-  if (linked.length) return linked;
-  return all.filter((d) => {
-    const key = [d.partner, d.city, d.address]
-      .map((s) => (s ?? "").trim().toLowerCase())
-      .join("|");
-    return key === store.storeKey;
-  });
+  const active = all.filter((d) => !d.removedFromBalenaAt);
+  const linked = active.filter((d) => uuids.includes(d.uuid));
+  if (linked.length) return sortStoreDevices(linked);
+  return sortStoreDevices(
+    active.filter((d) => {
+      const key = [d.partner, d.city, d.address]
+        .map((s) => (s ?? "").trim().toLowerCase())
+        .join("|");
+      return key === store.storeKey;
+    }),
+  );
 }
 
 export async function devicesForPrevadzka(store: PrevadzkaRecord) {

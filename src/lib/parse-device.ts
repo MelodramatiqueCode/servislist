@@ -1,5 +1,13 @@
 import { getAlertConfig } from "./alert-config";
 import { isLongOffline, isTestDevice } from "./alert-suppress";
+import {
+  countsForAlerts,
+  deviceIsOnline,
+  isRemovedFromBalena,
+  noteWithOriginalName,
+  showBezVpn,
+  stripDeviceNamePrefix,
+} from "./device-lifecycle";
 import type { BalenaDeviceRaw, ServiceDevice } from "./types";
 
 const PHONE_RE =
@@ -55,7 +63,8 @@ function parseCodeParts(head: string) {
 }
 
 export function parseDeviceName(deviceName: string) {
-  const { phones, cleaned } = extractPhones(deviceName);
+  const stripped = stripDeviceNamePrefix(deviceName);
+  const { phones, cleaned } = extractPhones(stripped.name);
   const parts = cleaned
     .split(",")
     .map((p) => p.trim())
@@ -111,11 +120,13 @@ export function normalizeBalenaDevice(
   raw: BalenaDeviceRaw,
   importedAt = new Date().toISOString(),
 ): ServiceDevice {
-  const parsed = parseDeviceName(raw.device_name);
+  const originalName = raw.device_name.trim();
+  const prefix = stripDeviceNamePrefix(originalName);
+  const parsed = parseDeviceName(originalName);
   return {
     uuid: raw.uuid,
     balenaId: raw.id,
-    name: raw.device_name.trim(),
+    name: originalName,
     code: parsed.code,
     partner: parsed.partner,
     city: parsed.city,
@@ -123,7 +134,7 @@ export function normalizeBalenaDevice(
     phone: parsed.phone,
     status: raw.status,
     overallStatus: raw.overall_status || raw.status || "",
-    isOnline: Boolean(raw.is_online),
+    isOnline: deviceIsOnline(raw),
     isConnectedToVpn: Boolean(raw.is_connected_to_vpn),
     apiHeartbeat: raw.api_heartbeat_state || "",
     supervisorVersion: raw.supervisor_version,
@@ -144,7 +155,7 @@ export function normalizeBalenaDevice(
     storageUsage: numOrNull(raw.storage_usage),
     storageTotal: numOrNull(raw.storage_total),
     isUndervolted: Boolean(raw.is_undervolted),
-    note: raw.note || "",
+    note: noteWithOriginalName(originalName, prefix.stripped, raw.note || ""),
   };
 }
 
@@ -195,6 +206,7 @@ export function isDiskFull(device: ServiceDevice) {
 }
 
 export function hasHealthAlert(device: ServiceDevice) {
+  if (!countsForAlerts(device)) return false;
   return (
     !device.isOnline ||
     device.isUndervolted ||
@@ -213,7 +225,8 @@ export type DeviceHealthFilter =
   | "alerts"
   | "vpn_down"
   | "long_offline"
-  | "test";
+  | "test"
+  | "removed";
 
 export function matchesHealthFilter(
   device: ServiceDevice,
@@ -221,33 +234,43 @@ export function matchesHealthFilter(
 ) {
   switch (filter) {
     case "all":
-      return true;
+      return !isRemovedFromBalena(device);
     case "online":
-      return device.isOnline;
+      return !isRemovedFromBalena(device) && device.isOnline;
     case "offline":
-      return !device.isOnline;
+      return countsForAlerts(device) && !device.isOnline;
     case "undervolt":
-      return device.isUndervolted;
+      return !isRemovedFromBalena(device) && device.isUndervolted;
     case "hot":
-      return isHot(device, getAlertConfig().hotOpenC);
+      return !isRemovedFromBalena(device) && isHot(device, getAlertConfig().hotOpenC);
     case "disk":
-      return isDiskFull(device);
+      return !isRemovedFromBalena(device) && isDiskFull(device);
     case "alerts":
       return hasHealthAlert(device);
     case "vpn_down":
-      return device.isOnline && !device.isConnectedToVpn;
+      return (
+        !isRemovedFromBalena(device) &&
+        device.isOnline &&
+        showBezVpn(device)
+      );
     case "long_offline":
-      return isLongOfflineDevice(device);
+      return countsForAlerts(device) && isLongOfflineDevice(device);
     case "test":
-      return isTestDevice(device, getAlertConfig().ignoreDevices);
+      return (
+        !isRemovedFromBalena(device) &&
+        isTestDevice(device, getAlertConfig().ignoreDevices)
+      );
+    case "removed":
+      return isRemovedFromBalena(device);
     default:
-      return true;
+      return !isRemovedFromBalena(device);
   }
 }
 
 /** Dlhodobo offline (Balena last-seen > ALERT_LONG_OFFLINE_DAYS), bez testovacích. */
 export function isLongOfflineDevice(device: ServiceDevice, now = new Date()) {
   const config = getAlertConfig();
+  if (!countsForAlerts(device)) return false;
   if (isTestDevice(device, config.ignoreDevices)) return false;
   return isLongOffline(device, now, config.longOfflineDays);
 }

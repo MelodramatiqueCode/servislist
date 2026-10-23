@@ -1,3 +1,4 @@
+import { showBezVpn } from "./device-lifecycle";
 import { isDiskFull, hardwareLabel } from "./parse-device";
 import { getAlertConfig } from "./alert-config";
 import type { ServiceDevice, TicketAlertType, TicketPriority } from "./types";
@@ -34,7 +35,7 @@ export function isAlertActive(device: ServiceDevice, type: AlertType): boolean {
     case "disk":
       return isDiskFull(device);
     case "vpn_down":
-      return device.isOnline && !device.isConnectedToVpn;
+      return device.isOnline && showBezVpn(device);
     default:
       return false;
   }

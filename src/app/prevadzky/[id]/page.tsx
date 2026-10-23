@@ -345,7 +345,11 @@ export default async function PrevadzkaDetailPage({
                   <div className="v">
                     {d.name}{" "}
                     <span className={`chip chip-sm ${d.isOnline ? "chip-ok" : "status-hotove"}`}>
-                      {d.isOnline ? "Online" : "Offline"}
+                      {d.replacedByUuid
+                        ? "Nahradené"
+                        : d.isOnline
+                          ? "Online"
+                          : "Offline"}
                     </span>
                   </div>
                   <div className="mono mt-1 text-xs text-[var(--ink-soft)]">

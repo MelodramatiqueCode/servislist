@@ -12,6 +12,7 @@ import {
   isHot,
   type DeviceHealthFilter,
 } from "@/lib/parse-device";
+import { showBezVpn } from "@/lib/device-lifecycle";
 import { getDeviceStats, listDevices } from "@/lib/store";
 import { StatCard } from "@/components/stat-card";
 
@@ -32,6 +33,7 @@ const HEALTH_OPTIONS: { id: DeviceHealthFilter; label: string }[] = [
   { id: "alerts", label: "Všetky alerty" },
   { id: "long_offline", label: "Dlhodobo offline" },
   { id: "test", label: "Testovacie" },
+  { id: "removed", label: "Odstránené z Baleny" },
 ];
 
 function storeCountLabel(n: number) {
@@ -87,6 +89,7 @@ export default async function DevicesPage({
     if (id === "alerts") return stats.alerts;
     if (id === "long_offline") return stats.longOffline;
     if (id === "test") return stats.test;
+    if (id === "removed") return stats.removed;
     return 0;
   };
 
@@ -218,6 +221,13 @@ export default async function DevicesPage({
             normálne.
           </p>
         ) : null}
+        {health === "removed" ? (
+          <p className="border-b border-[var(--line)] px-3 py-2 text-sm text-[var(--ink-soft)] md:px-4">
+            Zariadenia, ktoré Balena už nevracia. Ostávajú v archíve — história,
+            tickety a výkaz sa nemažú. Do offline štatistík a auto-ticketov sa
+            nepočítajú.
+          </p>
+        ) : null}
         {health === "test" ? (
           <p className="border-b border-[var(--line)] px-3 py-2 text-sm text-[var(--ink-soft)] md:px-4">
             Testovacie zariadenia (Demo, Balena predvolené názvy typu
@@ -267,6 +277,12 @@ export default async function DevicesPage({
                           Dlhodobo offline · {Math.floor(daysOff)} dní
                         </span>
                       ) : null}
+                      {d.removedFromBalenaAt ? (
+                        <span className="chip chip-compact">Odstránené z Baleny</span>
+                      ) : null}
+                      {d.replacedByUuid ? (
+                        <span className="chip chip-compact">Nahradené</span>
+                      ) : null}
                       {testDevice ? (
                         <span className="chip chip-compact">Testovacie</span>
                       ) : null}
@@ -285,7 +301,7 @@ export default async function DevicesPage({
                           Disk {formatPercent(d.storageUsage, d.storageTotal)}
                         </span>
                       ) : null}
-                      {d.isOnline && !d.isConnectedToVpn ? (
+                      {d.isOnline && showBezVpn(d) ? (
                         <span className="chip chip-compact chip-warn">
                           Bez VPN
                         </span>
