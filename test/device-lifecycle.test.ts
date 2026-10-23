@@ -283,4 +283,55 @@ describe("replacement pairing", () => {
     assert.equal(plan[0].keeperId, "orig");
     assert.deepEqual(plan[0].absorbIds, ["dup"]);
   });
+
+  test("merges a leftover nova store still linked to a ghost UUID", () => {
+    const devices = [
+      device({
+        uuid: "4158dcd3",
+        name: "49-GVPMO-P003",
+        code: "49",
+        partner: "GVPMO",
+        city: "Čierna nad Tisou",
+        removedFromBalenaAt: "2026-10-23T00:00:00.000Z",
+      }),
+      device({
+        uuid: "1fe0c6c8",
+        name: "NÓVÁ 49-GVPMO-P003",
+        code: "49",
+        partner: "GVPMO",
+        city: "Čierna nad Tisou",
+        removedFromBalenaAt: "2026-10-23T00:00:00.000Z",
+      }),
+      device({
+        uuid: "291d8894",
+        name: "NOVÁ NOVÁ2 49-GVPMO-P003",
+        code: "49",
+        partner: "GVPMO",
+        city: "Čierna nad Tisou",
+        isOnline: true,
+      }),
+    ];
+    const stores = [
+      {
+        id: "orig",
+        storeKey: "gvpmo|cierna|dukelskych",
+        code: "49",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "dup",
+        storeKey: "device:1fe0c6c8",
+        code: "",
+        createdAt: "2026-09-01T00:00:00.000Z",
+      },
+    ];
+    const links = new Map([
+      ["orig", ["4158dcd3", "291d8894"]],
+      ["dup", ["1fe0c6c8", "291d8894"]],
+    ]);
+    const plan = planStoreMerges(stores, links, devices);
+    assert.equal(plan.length, 1);
+    assert.equal(plan[0].keeperId, "orig");
+    assert.deepEqual(plan[0].absorbIds, ["dup"]);
+  });
 });
