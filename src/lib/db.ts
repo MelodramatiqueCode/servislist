@@ -33,11 +33,14 @@ import {
 import {
   DELETE_TEST_TICKET,
   DELETE_TEST_TICKET_META_KEY,
+  DELETE_TEST_TICKET_3404,
+  DELETE_TEST_TICKET_3404_META_KEY,
   DELETE_TEST_TICKETS_OCT23,
   DELETE_TEST_TICKETS_OCT23_META_KEY,
   isDeletedTicketId,
   shouldDeleteOct23TestTicket,
   shouldDeleteTestTicket,
+  shouldDeleteTicket3404,
 } from "./ticket-delete";
 
 type Sql = NeonQueryFunction<false, false>;
@@ -89,6 +92,7 @@ export async function ensureSchema() {
         await deleteStaleOpenVyjazdyOnce(sql);
         await deleteTestTicket3392Once(sql);
         await deleteTestTickets3400And3402Once(sql);
+        await deleteTestTicket3404Once(sql);
         return;
       }
       await sql`
@@ -511,6 +515,7 @@ export async function ensureSchema() {
       await deleteStaleOpenVyjazdyOnce(sql);
       await deleteTestTicket3392Once(sql);
       await deleteTestTickets3400And3402Once(sql);
+      await deleteTestTicket3404Once(sql);
     })().catch((error) => {
       schemaReady = null;
       throw error;
@@ -876,6 +881,67 @@ async function deleteTestTickets3400And3402Once(sql: Sql) {
   }
 
   await setMeta(DELETE_TEST_TICKETS_OCT23_META_KEY, JSON.stringify(outcomes));
+}
+
+/**
+ * Jednorazové úplné zmazanie T-3404 (pokyn Martina 23. 10. 2026).
+ * Zhoda len podľa UUID. Zmaže ticket, materiál a výkaz; výjazdy a
+ * udalosti zariadení odpojí. Pri skladových pohyboch ticket nemaže.
+ */
+async function deleteTestTicket3404Once(sql: Sql) {
+  const existing = await getMeta(DELETE_TEST_TICKET_3404_META_KEY);
+  if (existing !== "") return;
+
+  const id: string = DELETE_TEST_TICKET_3404.id;
+  const number: number = DELETE_TEST_TICKET_3404.number;
+  const rows = await sql`
+    SELECT id, number, title, customer_name FROM tickets WHERE id = ${id} LIMIT 1
+  `;
+  const row = rows[0] as
+    | { id: string; number: number; title: string; customer_name: string }
+    | undefined;
+  if (!row || !shouldDeleteTicket3404({ id: String(row.id) })) {
+    await setMeta(DELETE_TEST_TICKET_3404_META_KEY, row ? "skipped_mismatch" : "missing");
+    return;
+  }
+  const title = String(row.title ?? "");
+  const customerName = String(row.customer_name ?? "");
+  const pohyby = await sql`
+    SELECT 1 FROM sklad_pohyby WHERE ticket_id = ${id} LIMIT 1
+  `;
+  if (pohyby.length > 0) {
+    await setMeta(DELETE_TEST_TICKET_3404_META_KEY, "skipped_sklad_pohyby");
+    return;
+  }
+
+  const results = await sql.transaction((txn) => [
+    txn`DELETE FROM tickets WHERE id = ${id} RETURNING id`,
+    txn`DELETE FROM material WHERE ticket_id = ${id}`,
+    txn`DELETE FROM vykaz_prace WHERE ticket_id = ${id}`,
+    txn`UPDATE vyjazdy SET ticket_id = '' WHERE ticket_id = ${id}`,
+    txn`UPDATE device_events SET ticket_id = '' WHERE ticket_id = ${id}`,
+  ]);
+  const deletedCount = (results[0] as unknown[]).length;
+
+  if (deletedCount > 0) {
+    await sql`
+      INSERT INTO audit_log (
+        id, at, autor, typ, akcia, entity_id, popis, diff, request_id
+      ) VALUES (
+        ${randomUUID()},
+        NOW(),
+        'martin',
+        'ticket',
+        'delete',
+        ${id},
+        ${`Zmazaný ticket T-${number} „${title}“ (pokyn Martina 23. 10. 2026)`},
+        ${JSON.stringify({ id, number, title, customerName })}::jsonb,
+        ${DELETE_TEST_TICKET_3404_META_KEY}
+      )
+    `;
+  }
+
+  await setMeta(DELETE_TEST_TICKET_3404_META_KEY, String(deletedCount));
 }
 
 function rowToTicket(row: Record<string, unknown>): Ticket {
