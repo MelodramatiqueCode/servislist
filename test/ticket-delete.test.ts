@@ -26,13 +26,22 @@ describe("delete test ticket T-3392", () => {
 });
 
 describe("delete test tickets T-3400 and T-3402", () => {
-  test("matches T-3400 only on exact id + number + title + JLM Liptovský Mikuláš", () => {
+  test("matches T-3400 only on exact id + number + title + Liptovský Mikuláš", () => {
     assert.equal(
       shouldDeleteOct23TestTicket(DELETE_TEST_TICKET_3400, {
         id: DELETE_TEST_TICKET_3400.id,
         number: 3400,
         title: "TEST zápisu hotline (zmazať)",
         customerName: "#289 · JLM · Liptovský Mikuláš",
+      }),
+      true,
+    );
+    assert.equal(
+      shouldDeleteOct23TestTicket(DELETE_TEST_TICKET_3400, {
+        id: DELETE_TEST_TICKET_3400.id,
+        number: 3400,
+        title: "TEST zápisu hotline (zmazať)",
+        customerName: "PJ188 Liptovský Mikuláš Tempo",
       }),
       true,
     );
@@ -83,7 +92,7 @@ describe("delete test tickets T-3400 and T-3402", () => {
     );
   });
 
-  test("matches T-3402 only on exact id + number + title + JLM Liptovský Mikuláš", () => {
+  test("matches T-3402 only on exact id + number + title + Liptovský Mikuláš", () => {
     assert.equal(
       shouldDeleteOct23TestTicket(DELETE_TEST_TICKET_3402, {
         id: DELETE_TEST_TICKET_3402.id,
