@@ -27,7 +27,13 @@ import {
   getBalenaConfig,
   isBalenaConfigured,
 } from "./balena";
-import { normalizeBalenaDevice, matchesHealthFilter, isDiskFull, isHot } from "./parse-device";
+import {
+  normalizeBalenaDevice,
+  matchesHealthFilter,
+  isDiskFull,
+  isHot,
+  reparseStoredDevice,
+} from "./parse-device";
 import {
   inheritStoreFields,
   pairReplacementDevices,
@@ -605,6 +611,11 @@ async function runBalenaSync(options?: {
     }
 
     const remoteUuids = remote.map((row) => row.uuid);
+    const remoteSet = new Set(remoteUuids);
+    for (const [uuid, device] of byUuid) {
+      if (remoteSet.has(uuid)) continue;
+      byUuid.set(uuid, reparseStoredDevice(device));
+    }
     const ghosted = planRemovedFromBalena({
       remoteUuids,
       devices: inheritStoreFields([...byUuid.values()]),

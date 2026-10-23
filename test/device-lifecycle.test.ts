@@ -10,7 +10,7 @@ import {
   storeIdentityKey,
   stripDeviceNamePrefix,
 } from "../src/lib/device-lifecycle";
-import { parseDeviceName } from "../src/lib/parse-device";
+import { parseDeviceName, reparseStoredDevice } from "../src/lib/parse-device";
 import type { ServiceDevice } from "../src/lib/types";
 
 function device(
@@ -77,6 +77,20 @@ describe("device name prefixes", () => {
       storeIdentityKey(parseDeviceName("Nova-44-VerexVO-051")),
       storeIdentityKey(parseDeviceName("44-VerexVO-051")),
     );
+  });
+
+  test("reparseStoredDevice fixes a stale prefixed code on a ghost", () => {
+    const ghost = reparseStoredDevice(
+      device({
+        uuid: "1fe0c6c8",
+        name: "NÓVÁ 49-GVPMO-P003,Čierna nad Tisou,Dukelských hrdinov 10",
+        code: "NÓVÁ 49-GVPMO-P003",
+        partner: "",
+      }),
+    );
+    assert.equal(ghost.code, "49");
+    assert.equal(ghost.partner, "GVPMO");
+    assert.equal(ghost.city, "Čierna nad Tisou");
   });
 });
 
@@ -296,9 +310,9 @@ describe("replacement pairing", () => {
       }),
       device({
         uuid: "1fe0c6c8",
-        name: "NÓVÁ 49-GVPMO-P003",
-        code: "49",
-        partner: "GVPMO",
+        name: "NÓVÁ 49-GVPMO-P003,Čierna nad Tisou,Dukelských hrdinov 10",
+        code: "NÓVÁ 49-GVPMO-P003",
+        partner: "",
         city: "Čierna nad Tisou",
         removedFromBalenaAt: "2026-10-23T00:00:00.000Z",
       }),

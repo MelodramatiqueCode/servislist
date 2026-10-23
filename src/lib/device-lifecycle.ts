@@ -321,7 +321,13 @@ export function planStoreMerges(
       .filter((s) => s.id !== keeper.id)
       .filter((s) => {
         const uuids = links.get(s.id) ?? [];
-        return uuids.length > 0 && uuids.every((uuid) => groupUuids.has(uuid));
+        if (!uuids.length) return false;
+        const live = uuids.filter((uuid) => {
+          const device = byUuid.get(uuid);
+          return device && !device.removedFromBalenaAt;
+        });
+        const pool = live.length ? live : uuids;
+        return pool.every((uuid) => groupUuids.has(uuid));
       })
       .map((s) => s.id);
     if (absorbIds.length) merges.push({ keeperId: keeper.id, absorbIds });
