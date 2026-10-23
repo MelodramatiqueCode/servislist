@@ -40,11 +40,28 @@ export const DELETE_TEST_TICKETS_OCT23 = [
 export type DeleteTestTicketOct23Spec =
   (typeof DELETE_TEST_TICKETS_OCT23)[number];
 
+/**
+ * Jednorazové úplné zmazanie ticketu T-3404 — pokyn Martina 23. 10. 2026.
+ * Guard je len UUID; text názvu / prevádzky sa na zhodu nepoužíva.
+ */
+export const DELETE_TEST_TICKET_3404_META_KEY =
+  "delete_test_ticket_3404_2026-10-23";
+
+export const DELETE_TEST_TICKET_3404 = {
+  id: "53119c16-a236-479c-87e1-786928b45b8c",
+  number: 3404,
+} as const;
+
+export function shouldDeleteTicket3404(row: { id: string }) {
+  return row.id === DELETE_TEST_TICKET_3404.id;
+}
+
 /** Tieto id sa už nikdy nesmú zapísať späť (napr. z teplej cache inej inštancie). */
 export const DELETED_TICKET_IDS: readonly string[] = [
   DELETE_TEST_TICKET.id,
   DELETE_TEST_TICKET_3400.id,
   DELETE_TEST_TICKET_3402.id,
+  DELETE_TEST_TICKET_3404.id,
 ];
 
 export function isDeletedTicketId(id: string) {

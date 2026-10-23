@@ -3,9 +3,11 @@ import { describe, test } from "node:test";
 import {
   DELETE_TEST_TICKET_3400,
   DELETE_TEST_TICKET_3402,
+  DELETE_TEST_TICKET_3404,
   isDeletedTicketId,
   shouldDeleteOct23TestTicket,
   shouldDeleteTestTicket,
+  shouldDeleteTicket3404,
 } from "../src/lib/ticket-delete";
 
 const id3392 = "32f4b8f0-c0ed-4ffa-834c-4e53e2aa113e";
@@ -21,6 +23,7 @@ describe("delete test ticket T-3392", () => {
     assert.equal(isDeletedTicketId(id3392), true);
     assert.equal(isDeletedTicketId(DELETE_TEST_TICKET_3400.id), true);
     assert.equal(isDeletedTicketId(DELETE_TEST_TICKET_3402.id), true);
+    assert.equal(isDeletedTicketId(DELETE_TEST_TICKET_3404.id), true);
     assert.equal(isDeletedTicketId("02610142-d076-4f22-9e5c-91eb02031399"), false);
   });
 });
@@ -141,5 +144,24 @@ describe("delete test tickets T-3400 and T-3402", () => {
       }),
       false,
     );
+  });
+});
+
+describe("delete ticket T-3404", () => {
+  test("matches only the exact UUID, never title or store text", () => {
+    assert.equal(
+      shouldDeleteTicket3404({ id: DELETE_TEST_TICKET_3404.id }),
+      true,
+    );
+    assert.equal(
+      shouldDeleteTicket3404({ id: DELETE_TEST_TICKET_3400.id }),
+      false,
+    );
+    assert.equal(shouldDeleteTicket3404({ id: "other" }), false);
+    assert.equal(
+      DELETE_TEST_TICKET_3404.id,
+      "53119c16-a236-479c-87e1-786928b45b8c",
+    );
+    assert.equal(DELETE_TEST_TICKET_3404.number, 3404);
   });
 });
