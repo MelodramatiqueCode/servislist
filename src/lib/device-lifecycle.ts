@@ -290,10 +290,10 @@ export function planStoreMerges(
 
   for (const list of groups.values()) {
     const groupUuids = new Set(list.map((d) => d.uuid));
-    // Include siblings that share identity even without prefix (the original Pi).
+    // Include siblings that share identity — aj duchov, aby sa zlúčili
+    // staré prevádzky naviazané len na odstránené UUID.
     const identity = storeIdentityKey(list[0]);
     for (const device of devices) {
-      if (device.removedFromBalenaAt) continue;
       if (storeIdentityKey(device) === identity) groupUuids.add(device.uuid);
     }
     if (groupUuids.size < 2 && list.length < 1) continue;
