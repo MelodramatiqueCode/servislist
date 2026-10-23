@@ -16,20 +16,20 @@ export const DELETE_TEST_TICKET = {
  * pokyn Martina 23. 10. 2026. Len tieto dve čísla a ich závislé záznamy.
  */
 export const DELETE_TEST_TICKETS_OCT23_META_KEY =
-  "delete_test_tickets_3400_3402_2026-10-23";
+  "delete_test_tickets_3400_3402_2026-10-23_v2";
 
 export const DELETE_TEST_TICKET_3400 = {
   id: "6a5c54c1-2977-475a-aff1-ea2fa8aedae6",
   number: 3400,
   title: "TEST zápisu hotline (zmazať)",
-  storeHint: "JLM Liptovský Mikuláš",
+  storeHint: "Liptovský Mikuláš",
 } as const;
 
 export const DELETE_TEST_TICKET_3402 = {
   id: "4033c7fe-22e0-4bc6-bb26-34e2f50df624",
   number: 3402,
   title: "Nehrá hudba - JLM Liptovský Mikuláš, Tempo",
-  storeHint: "JLM Liptovský Mikuláš",
+  storeHint: "Liptovský Mikuláš",
 } as const;
 
 export const DELETE_TEST_TICKETS_OCT23 = [
@@ -69,7 +69,11 @@ function storeHaystack(row: { title: string; customerName: string }) {
     .replace(/\s+/g, " ");
 }
 
-/** Presné id + číslo + text a prevádzka JLM Liptovský Mikuláš. Inak nemazať. */
+/**
+ * Presné id + číslo + text a mesto Liptovský Mikuláš v customer_name alebo
+ * názve. T-3400 má customer_name „PJ188 Liptovský Mikuláš Tempo“, nie
+ * „JLM Liptovský Mikuláš“. Inak nemazať.
+ */
 export function shouldDeleteOct23TestTicket(
   spec: DeleteTestTicketOct23Spec,
   row: { id: string; number: number; title: string; customerName: string },
