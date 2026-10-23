@@ -116,6 +116,21 @@ function numOrNull(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/** Znovu parsuje uložený názov (duchovia, ktorých Balena už neposiela). */
+export function reparseStoredDevice(device: ServiceDevice): ServiceDevice {
+  const prefix = stripDeviceNamePrefix(device.name);
+  const parsed = parseDeviceName(device.name);
+  return {
+    ...device,
+    code: /^\d+$/.test(parsed.code) ? parsed.code : device.code,
+    partner: parsed.partner || device.partner,
+    city: device.city || parsed.city,
+    address: device.address || parsed.address,
+    phone: device.phone || parsed.phone,
+    note: noteWithOriginalName(device.name, prefix.stripped, device.note),
+  };
+}
+
 export function normalizeBalenaDevice(
   raw: BalenaDeviceRaw,
   importedAt = new Date().toISOString(),
