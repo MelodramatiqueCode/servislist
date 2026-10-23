@@ -796,7 +796,7 @@ async function deleteTestTicket3392Once(sql: Sql) {
 /**
  * Jednorazové úplné zmazanie skúšobných ticketov T-3400 a T-3402
  * (pokyn Martina 23. 10. 2026). Každý ticket sa posúdi samostatne:
- * len presné id + číslo + text a prevádzka JLM Liptovský Mikuláš.
+ * len presné id + číslo + text a mesto Liptovský Mikuláš.
  * Zmaže ticket a jeho materiál a výkaz; odkazy z výjazdov a udalostí
  * zariadení len odpojí. Ak by na ticket viseli skladové pohyby, ten
  * ticket nezmaže. Audit log ostáva, pribudne záznam o zmazaní.
