@@ -107,6 +107,7 @@ export function serializeDevice(device: ServiceDevice) {
     overallStatus: device.overallStatus,
     isOnline: device.isOnline,
     isConnectedToVpn: device.isConnectedToVpn,
+    apiHeartbeat: device.apiHeartbeat || "",
     deviceType: device.deviceType,
     fleet: device.fleet,
     dashboardUrl: device.dashboardUrl,
@@ -116,6 +117,8 @@ export function serializeDevice(device: ServiceDevice) {
     longOffline: isLongOfflineDevice(device),
     testDevice: isTestDevice(device, getAlertConfig().ignoreDevices),
     note: device.note,
+    removedFromBalenaAt: device.removedFromBalenaAt || "",
+    replacedByUuid: device.replacedByUuid || "",
   };
 }
 

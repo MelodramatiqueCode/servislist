@@ -61,6 +61,17 @@ export default async function DeviceDetailPage({
           <span className="chip prio-normalna">
             {device.overallStatus || device.status}
           </span>
+          {device.removedFromBalenaAt ? (
+            <span className="chip">Odstránené z Baleny</span>
+          ) : null}
+          {device.replacedByUuid ? (
+            <span className="chip">Nahradené</span>
+          ) : null}
+          {device.isOnline &&
+          (device.overallStatus === "reduced-functionality" ||
+            !device.isConnectedToVpn) ? (
+            <span className="chip prio-vysoka">Bez VPN</span>
+          ) : null}
           {device.isUndervolted ? (
             <span className="chip prio-urgentna">Undervoltage</span>
           ) : null}

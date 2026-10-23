@@ -2,6 +2,7 @@ import type { AlertConfig } from "./alert-config";
 import { isWithinStoreHours } from "./alert-hours";
 import { offlineConfirmBlocked } from "./alert-offline";
 import type { AlertType } from "./alerts";
+import { showBezVpn } from "./device-lifecycle";
 import type { AlertPending, DeviceEvent, ServiceDevice } from "./types";
 
 export type PolicyContext = {
@@ -56,7 +57,7 @@ export function isPhysicallyActive(
         device.storageUsage / device.storageTotal >= 0.9
       );
     case "vpn_down":
-      return device.isOnline && !device.isConnectedToVpn;
+      return device.isOnline && showBezVpn(device);
     default:
       return false;
   }

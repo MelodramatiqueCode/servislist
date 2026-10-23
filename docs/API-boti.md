@@ -292,9 +292,11 @@ curl -sS https://servislist.vercel.app/api/v1/vyjazdy/V-0003 \
 ### `GET /api/v1/zariadenia` a `GET /api/v1/zariadenia/:uuid`
 
 Číta uložený snapshot (žiadny sync z Baleny). Query: `q`, `online` (`all` \| `online` \| `offline`), `partner` / `prevadzka`.
-`health` = `long_offline` (dlhodobo offline, zoradené od najstaršieho) alebo `test` (testovacie zariadenia).
+`health` = `long_offline` (dlhodobo offline, zoradené od najstaršieho), `test` (testovacie) alebo `removed` (odstránené z Baleny).
 
-Každé zariadenie má navyše `lastConnectivityEvent` (Balena last-seen), `offlineDays` (dni offline, inak `null`), `longOffline` a `testDevice`.
+Každé zariadenie má navyše `lastConnectivityEvent` (Balena last-seen), `offlineDays` (dni offline, inak `null`), `longOffline`, `testDevice`, `apiHeartbeat`, `overallStatus`, `removedFromBalenaAt` a `replacedByUuid`.
+
+Online = `is_online` alebo `apiHeartbeat === "online"` alebo `overallStatus` ∈ {`operational`, `reduced-functionality`}. Duchovia (`removedFromBalenaAt`) nie sú v predvolenom zozname. Nahradené UUID ostávajú v zozname, ale nerátajú sa do offline / alertov.
 
 **Pravidlá auto ticketov:** testovacie zariadenia (Demo, Demo2, Balena predvolené názvy typu `quiet-engine`, alebo zoznam v env `ALERT_IGNORE_DEVICES`) a zariadenia offline dlhšie ako `ALERT_LONG_OFFLINE_DAYS` (predvolene 7) dní netvoria auto tickety. Archivovaný auto ticket sa pre ten istý incident znova nevytvorí — nový vznikne až keď sa zariadenie vráti online a znova padne.
 

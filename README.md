@@ -74,7 +74,7 @@ DATABASE_URL='...' npm run db:migrate
 
 Alebo otvor appku / spusti sync — schema sa vytvorí aj lazy pri prvom DB prístupe (`ensureSchema`).
 
-5. Cron: `vercel.json` syncuje flotilu každých 5 minút cez `/api/sync-balena?force=1`.
+5. Cron: `vercel.json` syncuje flotilu každých 5 minút cez `/api/sync-balena` (STALE_MS 5 min).
    - Na **Hobby** pláne môže byť cron obmedzený (max 1× denne) — uprav `schedule` alebo upgradni Pro.
 6. Odporúčané: zapni **Deployment Protection** / heslo, kým nemáte auth.
 

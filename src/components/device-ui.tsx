@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatDate } from "@/lib/format";
+import { relativeAge } from "@/lib/pulse";
 
 type DeviceOption = {
   uuid: string;
@@ -144,7 +145,9 @@ export function SyncBalenaButton({
           <h2 className="text-lg font-bold">Live stav z Balena Cloud</h2>
           <p className="text-sm text-[var(--ink-soft)]">
             Fleet <span className="font-semibold">{fleetSlug}</span>
-            {syncedAt ? ` · posledný sync ${formatDate(syncedAt)}` : ""}
+            {syncedAt
+              ? ` · Sync pred ${relativeAge(syncedAt)} · ${formatDate(syncedAt)}`
+              : ""}
           </p>
           <p className="mt-1 text-xs text-[var(--ink-soft)]">
             Auto-tickety pri novom alerte (offline, undervolt, horúce, disk,

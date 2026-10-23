@@ -34,12 +34,12 @@ describe("balena sync policy", () => {
     assert.equal(BALENA_SYNC_MAX_DURATION_SEC, 90);
     assert.equal(BALENA_FETCH_TIMEOUT_MS, 15_000);
     assert.equal(BALENA_PAGE_SIZE, 400);
-    assert.ok(BALENA_FULL_REFRESH_MS === 60 * 60 * 1000);
+    assert.ok(BALENA_FULL_REFRESH_MS === 5 * 60 * 1000);
     assert.ok(BALENA_SYNC_LEASE_MS < BALENA_SYNC_MAX_DURATION_SEC * 1000);
   });
 
-  test("Kontrola still treats an hourly refresh as healthy", () => {
-    assert.equal(KONTROLA_SYNC_OK_MINUTES, 70);
+  test("Kontrola treats a 5-minute cadence as healthy within 20 min", () => {
+    assert.equal(KONTROLA_SYNC_OK_MINUTES, 20);
     const view = readFileSync(
       new URL("../src/lib/kontrola-view.ts", import.meta.url),
       "utf8",

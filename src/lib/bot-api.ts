@@ -564,7 +564,9 @@ export async function botListDevices(url: URL) {
       ? "long_offline"
       : healthRaw === "test"
         ? "test"
-        : undefined;
+        : healthRaw === "removed" || healthRaw === "odstranene"
+          ? "removed"
+          : undefined;
   const devices = await listDevices({
     q: queryString(url, "q", "hladaj", "prevadzka"),
     online,

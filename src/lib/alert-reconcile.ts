@@ -18,6 +18,7 @@ import {
   isLongOffline,
   isTestDevice,
 } from "./alert-suppress";
+import { countsForAlerts } from "./device-lifecycle";
 import {
   ALERT_LABELS,
   ALERT_TYPES,
@@ -229,7 +230,7 @@ export function reconcileAlerts(input: ReconcileInput): ReconcileResult {
     const prev = prevMap.get(device.uuid);
     const openExisting = findOpenAutoTicket(tickets, device.uuid);
 
-    if (isTestDevice(device, config.ignoreDevices)) {
+    if (!countsForAlerts(device) || isTestDevice(device, config.ignoreDevices)) {
       // Testovacie zariadenie: žiadne auto tickety, rozpracované epizódy zahoď.
       ignoredUuids.add(device.uuid);
       for (const type of ALERT_TYPES) {
