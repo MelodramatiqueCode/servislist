@@ -108,7 +108,8 @@ export default async function KontrolaPage({
             </div>
             <strong>{snap.api.today} požiadaviek</strong>
             <div className="s">
-              Servis {snap.api.servis} · Hotline {snap.api.hotline}
+              Servis {snap.api.servis} · Hotline {snap.api.hotline} ·
+              Ústredňa {snap.api.ustredna}
               <br />
               priem. odozva {snap.api.avgMs} ms
             </div>
@@ -289,8 +290,14 @@ export default async function KontrolaPage({
                   </b>
                 </div>
                 <div>
-                  {bot.id === "hotline" ? "chyby" : "návrhy"}
-                  <b>{bot.id === "hotline" ? bot.errors : bot.navrhy}</b>
+                  {bot.id === "hotline" || bot.id === "ustredna"
+                    ? "chyby"
+                    : "návrhy"}
+                  <b>
+                    {bot.id === "hotline" || bot.id === "ustredna"
+                      ? bot.errors
+                      : bot.navrhy}
+                  </b>
                 </div>
               </div>
               <div className="tl">

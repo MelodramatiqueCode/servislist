@@ -8,6 +8,7 @@ const SOURCE_BOT_LABELS = {
   servis: "Servis bot",
   hotline: "Hotline bot",
   elevenlabs: "ElevenLabs hotline",
+  ustredna: "Ústredňa Ozvena",
 } as const;
 
 export function ticketProgress(status: TicketStatus) {
@@ -44,6 +45,9 @@ export function ticketSourceLabel(ticket: Pick<Ticket, "source" | "assignedTo" |
     .join(" ")
     .toLowerCase();
   if (hay.includes("elevenlabs")) return SOURCE_BOT_LABELS.elevenlabs;
+  if (hay.includes("ústred") || hay.includes("ustred")) {
+    return SOURCE_BOT_LABELS.ustredna;
+  }
   if (hay.includes("hotline")) return SOURCE_BOT_LABELS.hotline;
   return SOURCE_BOT_LABELS.servis;
 }
@@ -52,7 +56,8 @@ export function isBotSource(label: string) {
   return (
     label === SOURCE_BOT_LABELS.servis ||
     label === SOURCE_BOT_LABELS.hotline ||
-    label === SOURCE_BOT_LABELS.elevenlabs
+    label === SOURCE_BOT_LABELS.elevenlabs ||
+    label === SOURCE_BOT_LABELS.ustredna
   );
 }
 
