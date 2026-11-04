@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 import {
+  actorScope,
   authenticateBot,
   disabledBotIds,
   hashApiToken,
@@ -17,6 +18,8 @@ const ENV_KEYS = [
   "HOTLINE_BOT_API_TOKEN_HASH",
   "ELEVENLABS_BOT_API_TOKEN",
   "ELEVENLABS_BOT_API_TOKEN_HASH",
+  "USTREDNA_BOT_API_TOKEN",
+  "USTREDNA_BOT_API_TOKEN_HASH",
   "API_BOT_TOKENS",
   "API_BOT_DISABLED",
   "DATABASE_URL",
@@ -88,15 +91,24 @@ describe("bot-auth", () => {
     process.env.ELEVENLABS_BOT_API_TOKEN = "elevenlabs-secret";
 
     const servis = await authenticateBot("Bearer servis-secret");
-    assert.deepEqual(servis, { id: "servis", name: "Servis bot" });
+    assert.deepEqual(servis, {
+      id: "servis",
+      name: "Servis bot",
+      scope: "full",
+    });
 
     const hotline = await authenticateBot("Bearer hotline-secret");
-    assert.deepEqual(hotline, { id: "hotline", name: "Hotline bot" });
+    assert.deepEqual(hotline, {
+      id: "hotline",
+      name: "Hotline bot",
+      scope: "full",
+    });
 
     const elevenlabs = await authenticateBot("Bearer elevenlabs-secret");
     assert.deepEqual(elevenlabs, {
       id: "elevenlabs",
       name: "ElevenLabs hotline",
+      scope: "full",
     });
 
     assert.equal(await authenticateBot("Bearer zly"), null);
@@ -121,6 +133,27 @@ describe("bot-auth", () => {
       },
     ]);
     const actor = await authenticateBot("Bearer sklad-secret");
-    assert.deepEqual(actor, { id: "sklad", name: "Sklad bot" });
+    assert.deepEqual(actor, {
+      id: "sklad",
+      name: "Sklad bot",
+      scope: "full",
+    });
+  });
+
+  test("Ústredňa Ozvena z hashu má scope ustredna", async () => {
+    resetEnv();
+    process.env.USTREDNA_BOT_API_TOKEN_HASH = hashApiToken("ustredna-secret");
+    const bots = loadEnvBots();
+    assert.equal(bots.length, 1);
+    assert.equal(bots[0].id, "ustredna");
+    assert.equal(bots[0].name, "Ústredňa Ozvena");
+    assert.equal(bots[0].scope, "ustredna");
+    assert.deepEqual(await authenticateBot("Bearer ustredna-secret"), {
+      id: "ustredna",
+      name: "Ústredňa Ozvena",
+      scope: "ustredna",
+    });
+    assert.equal(actorScope({}), "full");
+    assert.equal(actorScope({ scope: "ustredna" }), "ustredna");
   });
 });

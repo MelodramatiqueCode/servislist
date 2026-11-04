@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { afterResponse } from "./after-response";
-import { authenticateBot, type BotActor } from "./bot-auth";
+import { actorScope, authenticateBot, type BotActor } from "./bot-auth";
 
 export type ApiErrorBody = {
   error: string;
@@ -85,6 +85,33 @@ export function queryString(url: URL, ...keys: string[]) {
   return "";
 }
 
+function normalizeBotPath(pathname: string) {
+  const path = pathname.split("?")[0].replace(/\/+$/, "");
+  return path || "/";
+}
+
+/**
+ * Allowlist pre scope `ustredna`. `full` má všetko. Default deny.
+ * GET /api/v1/* ; POST /api/v1/tickets ; POST /api/v1/tickets/:id/notes.
+ */
+export function isBotRouteAllowed(
+  actor: Pick<BotActor, "scope">,
+  method: string,
+  pathname: string,
+) {
+  if (actorScope(actor) === "full") return true;
+  const verb = method.toUpperCase();
+  const path = normalizeBotPath(pathname);
+  if (verb === "GET") {
+    return path === "/api/v1" || path.startsWith("/api/v1/");
+  }
+  if (verb === "POST" && path === "/api/v1/tickets") return true;
+  if (verb === "POST" && /^\/api\/v1\/tickets\/[^/]+\/notes$/.test(path)) {
+    return true;
+  }
+  return false;
+}
+
 export async function handleBotRoute(
   request: Request,
   run: (actor: BotActor) => Promise<Response>,
@@ -92,21 +119,36 @@ export async function handleBotRoute(
   const started = Date.now();
   const url = new URL(request.url);
   let actor: BotActor | null = null;
+  const pending: Promise<unknown>[] = [];
+  const schedule = (work: () => Promise<unknown> | unknown) => {
+    const scheduled = afterResponse(work);
+    if (scheduled) pending.push(scheduled);
+  };
   try {
     actor = await requireBot(request);
     const caller = actor;
+    if (!isBotRouteAllowed(caller, request.method, url.pathname)) {
+      throw new ApiError(
+        403,
+        "forbidden_scope",
+        "Tento bot nemá oprávnenie na túto akciu.",
+      );
+    }
     const response = await run(caller);
-    afterResponse(() =>
+    schedule(() =>
       logBotCall(caller, request.method, url.pathname, response.status, started),
     );
+    if (pending.length) await Promise.all(pending);
     return response;
   } catch (error) {
     const response = jsonError(error);
     const status = response.status;
     const caller = actor;
+    const forbidden =
+      error instanceof ApiError && error.code === "forbidden_scope";
     if (status >= 400) {
-      afterResponse(async () => {
-        const { captureAppError } = await import("./kontrola-store");
+      schedule(async () => {
+        const { captureAppError, writeAudit } = await import("./kontrola-store");
         await captureAppError({
           zdroj: "api",
           route: url.pathname,
@@ -115,13 +157,29 @@ export async function handleBotRoute(
           message: error instanceof Error ? error.message : "API chyba",
           stack: error instanceof Error ? error.stack : "",
         });
+        if (forbidden && caller) {
+          await writeAudit({
+            autor: caller.name,
+            typ: "nastavenia",
+            akcia: "forbidden_scope",
+            entityId: caller.id,
+            popis: `${caller.name} ${request.method} ${url.pathname} zamietnuté (scope ${actorScope(caller)})`,
+            diff: {
+              bot: caller.id,
+              method: request.method,
+              path: url.pathname,
+              scope: actorScope(caller),
+            },
+          });
+        }
       });
     }
     if (caller) {
-      afterResponse(() =>
+      schedule(() =>
         logBotCall(caller, request.method, url.pathname, status, started),
       );
     }
+    if (pending.length) await Promise.all(pending);
     return response;
   }
 }

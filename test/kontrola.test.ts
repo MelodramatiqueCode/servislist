@@ -27,6 +27,8 @@ describe("kontrola helpers", () => {
     assert.equal(parseAuditAutor("Servis bot"), "servis_bot");
     assert.equal(parseAuditAutor("ElevenLabs hotline"), "elevenlabs_bot");
     assert.equal(parseAuditAutor("elevenlabs"), "elevenlabs_bot");
+    assert.equal(parseAuditAutor("Ústredňa Ozvena"), "ustredna_bot");
+    assert.equal(parseAuditAutor("ustredna"), "ustredna_bot");
     assert.equal(parseAuditAutor("Martin"), "martin");
     assert.equal(wantsPendingNavrh({ pending: true }), true);
     assert.equal(wantsPendingNavrh({ navrh: "true" }), true);

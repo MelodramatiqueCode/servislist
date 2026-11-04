@@ -92,6 +92,7 @@ export async function kontrolaSnapshot() {
       : 0;
   const servisToday = todayRequests.filter((r) => r.bot === "servis").length;
   const hotlineToday = todayRequests.filter((r) => r.bot === "hotline").length;
+  const ustrednaToday = todayRequests.filter((r) => r.bot === "ustredna").length;
 
   const approvals: ApprovalItem[] = [
     ...stores.map((store) => ({
@@ -150,7 +151,8 @@ export async function kontrolaSnapshot() {
     (row) =>
       (row.autor === "servis_bot" ||
         row.autor === "hotline_bot" ||
-        row.autor === "elevenlabs_bot") &&
+        row.autor === "elevenlabs_bot" ||
+        row.autor === "ustredna_bot") &&
       new Date(row.at).getTime() >= new Date(hourAgo).getTime(),
   ).length;
   const apiErrors = errors.filter((e) => e.zdroj === "api");
@@ -218,6 +220,11 @@ export async function kontrolaSnapshot() {
       autor: "elevenlabs_bot" as const,
       name: "ElevenLabs hotline",
     },
+    {
+      id: "ustredna",
+      autor: "ustredna_bot" as const,
+      name: "Ústredňa Ozvena",
+    },
   ];
   const bots = botIds.map((bot) => {
     const writes = audit.filter((r) => r.autor === bot.autor);
@@ -245,7 +252,12 @@ export async function kontrolaSnapshot() {
         ...writes.slice(0, 8).map((r) => ({
           at: r.at,
           text: r.popis,
-          tone: r.akcia.includes("error") ? "d" : r.akcia === "navrh" ? "" : "a",
+          tone:
+            r.akcia.includes("error") || r.akcia === "forbidden_scope"
+              ? "d"
+              : r.akcia === "navrh"
+                ? ""
+                : "a",
         })),
         ...errors
           .filter((e) => parseAuditAutor(e.bot) === bot.autor)
@@ -279,6 +291,7 @@ export async function kontrolaSnapshot() {
       today: todayRequests.length,
       servis: servisToday,
       hotline: hotlineToday,
+      ustredna: ustrednaToday,
       avgMs,
     },
     errors: {

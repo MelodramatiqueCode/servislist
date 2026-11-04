@@ -1,4 +1,4 @@
-# API pre botov (Servis bot, Hotline bot, ElevenLabs hotline)
+# API pre botov (Servis bot, Hotline bot, ElevenLabs hotline, Ústredňa Ozvena)
 
 Základná URL: `https://servislist.vercel.app`
 
@@ -17,6 +17,7 @@ Každý zápis sa v tickete ukáže s autorom bota (napr. `Hotline bot`, `Servis
 | Servis bot | `servis` | Servis bot | `SERVIS_BOT_API_TOKEN` | `SERVIS_BOT_API_TOKEN_HASH` |
 | Hotline bot | `hotline` | Hotline bot | `HOTLINE_BOT_API_TOKEN` | `HOTLINE_BOT_API_TOKEN_HASH` |
 | ElevenLabs hotline | `elevenlabs` | ElevenLabs hotline | `ELEVENLABS_BOT_API_TOKEN` | `ELEVENLABS_BOT_API_TOKEN_HASH` |
+| Ústredňa Ozvena | `ustredna` | Ústredňa Ozvena | `USTREDNA_BOT_API_TOKEN` | `USTREDNA_BOT_API_TOKEN_HASH` |
 
 Stačí jedna z dvojice (plaintext **alebo** hash). Tokeny dávaj len do Vercel Environment Variables, nikdy do gitu.
 
@@ -43,7 +44,7 @@ Odporúčaný postup (nemení sa v tomto PR, nastaví Martin v dashboarde):
 3. Bot posiela **oba** headre:
 
 ```http
-Authorization: Bearer <SERVIS_BOT_API_TOKEN, HOTLINE_BOT_API_TOKEN alebo ELEVENLABS_BOT_API_TOKEN>
+Authorization: Bearer <SERVIS_BOT_API_TOKEN, HOTLINE_BOT_API_TOKEN, ELEVENLABS_BOT_API_TOKEN alebo USTREDNA_BOT_API_TOKEN>
 x-vercel-protection-bypass: <VERCEL_AUTOMATION_BYPASS_SECRET>
 ```
 
@@ -75,6 +76,7 @@ Vždy JSON:
 | `error` | HTTP |
 |---|---|
 | `unauthorized` | 401 |
+| `forbidden_scope` | 403 |
 | `validation_error` | 400 |
 | `invalid_json` | 400 |
 | `not_found` | 404 |
@@ -102,6 +104,8 @@ curl -sS https://servislist.vercel.app/api/v1 \
 ```
 
 ElevenLabs hotline vráti `"bot": "ElevenLabs hotline", "botId": "elevenlabs"`. Má rovnaké práva ako Hotline bot (čítanie prevádzok, vytváranie a úprava ticketov). Bez `ELEVENLABS_BOT_API_TOKEN` (ani hashu) je táto identita vypnutá.
+
+Ústredňa Ozvena vráti `"bot": "Ústredňa Ozvena", "botId": "ustredna"` a má **obmedzený scope** — pozri sekciu nižšie.
 
 ### `GET /api/v1/tickets` — zoznam
 
@@ -588,6 +592,72 @@ curl -sS "https://servislist.vercel.app/api/v1/tickets?status=aktivne&prevadzka=
 
 ---
 
+## Ústredňa Ozvena (`ustredna`)
+
+Bot pre hlasovú ústredňu. Scope `ustredna` je **allowlist** (default deny) a kontroluje sa centrálne v `handleBotRoute` — ešte pred handlerom. Zakázaná akcia vráti `403 { "error": "forbidden_scope" }` a zapíše sa do audit / bot-activity (stránka Kontrola: actor, metóda, cesta, čas) aj ako chyba Bot API.
+
+V produkcii sa nastaví **iba** `USTREDNA_BOT_API_TOKEN_HASH` (SHA-256 hex tokenu). Plaintext `USTREDNA_BOT_API_TOKEN` je len pre lokálny vývoj.
+
+### Povolené
+
+| Metóda | Cesta | Účel |
+|---|---|---|
+| `GET` | `/api/v1/*` | čítanie (tickety, prevádzky, zariadenia, sklad, výjazdy, …) |
+| `POST` | `/api/v1/tickets` | vytvorenie ticketu (vrátane `clientRef` / `Idempotency-Key`) |
+| `POST` | `/api/v1/tickets/:id/notes` | pridanie poznámky |
+
+`:id` môže byť UUID ticketu alebo číslo (`12` / `#0012`).
+
+### Zakázané (príklady; všetko mimo allowlistu)
+
+`POST /tickets/:id/close`, `/reopen`, `/vyjazd`, `/material` · `PATCH /tickets/:id`, `/status` · `DELETE` čokoľvek · `POST /prevadzky`, `PATCH /prevadzky/:id` · `POST /prevadzky/:id/vykaz` · `POST /navrhy` · `POST /sklad/prijem` (+ `/subor`) · budúce write routy.
+
+### `POST /api/v1/tickets` — payload
+
+Povinné: `title`, `description`. Ďalej buď `deviceUuid` (doplní prevádzku ako UI), alebo `prevadzka` / `customerName` + `deviceType`.
+
+```json
+{
+  "title": "Pokladňa nejde",
+  "description": "Zákazník volal, čierna obrazovka od rána.",
+  "deviceUuid": "balena-uuid-zariadenia",
+  "priority": "vysoka",
+  "clientRef": "ustredna-hovor-2026-11-04-1",
+  "note": "Prijaté na ústredni, sľúbený callback."
+}
+```
+
+Bez UUID, len prevádzka:
+
+```json
+{
+  "title": "Tlačiareň neťahá",
+  "description": "Blokuje front.",
+  "prevadzka": "COOP Martin",
+  "deviceType": "Tlačiareň",
+  "priority": "normalna"
+}
+```
+
+Voliteľné polia: `deviceSerial`, `customerName`, `customerPhone`, `assignedTo`, `priority` (`nizka` / `normalna` / `vysoka` / `urgentna`), `clientRef` alebo `client_ref`, `note` / `poznamka`. Header `Idempotency-Key` sa použije ako `clientRef`, ak telo `clientRef` nemá.
+
+Odpoveď: **201** pri novom, **200** pri opakovanom `clientRef` (`idempotent: true`). Autor prvej poznámky je `Ústredňa Ozvena`.
+
+### `POST /api/v1/tickets/:id/notes` — payload
+
+```json
+{
+  "text": "Zákazník volal znova, stále čierna obrazovka.",
+  "clientRef": "ustredna-note-88"
+}
+```
+
+`text` (alebo `poznamka`) je povinný. `clientRef` / `client_ref` / header `Idempotency-Key` je voliteľný. Autor sa berie z tokenu, nie z tela.
+
+Odpoveď: **201** pri novej poznámke, **200** pri opakovanom `clientRef` (`idempotent: true`).
+
+---
+
 ## Čo musí Martin nastaviť vo Vercel
 
 Project **servislist** → Settings → Environment Variables (Production, ideálne aj Preview):
@@ -597,10 +667,12 @@ Project **servislist** → Settings → Environment Variables (Production, ideá
 | `SERVIS_BOT_API_TOKEN` | Sensitive | Dlhý náhodný reťazec, napr. `openssl rand -hex 32` |
 | `HOTLINE_BOT_API_TOKEN` | Sensitive | Iný náhodný reťazec |
 | `ELEVENLABS_BOT_API_TOKEN` | Sensitive | Token pre Massiva Hotline (ElevenLabs). Ak chýba, identita je vypnutá. |
+| `USTREDNA_BOT_API_TOKEN` | Sensitive | Len lokálne / dev. V produkcii sa **nenastavuje**. |
 | `SERVIS_BOT_API_TOKEN_HASH` | Sensitive | Voliteľné namiesto plaintext tokenu |
 | `HOTLINE_BOT_API_TOKEN_HASH` | Sensitive | Voliteľné namiesto plaintext tokenu |
 | `ELEVENLABS_BOT_API_TOKEN_HASH` | Sensitive | Voliteľné namiesto plaintext tokenu |
-| `API_BOT_DISABLED` | Plain | Voliteľné; `servis` / `hotline` / `elevenlabs` na vypnutie |
+| `USTREDNA_BOT_API_TOKEN_HASH` | Sensitive | Produkcia: iba hash, nie plaintext token |
+| `API_BOT_DISABLED` | Plain | Voliteľné; `servis` / `hotline` / `elevenlabs` / `ustredna` na vypnutie |
 | `API_BOT_TOKENS` | Sensitive | Voliteľné JSON extra botov `[{id,name,tokenHash}]` |
 | `DATABASE_URL` | už je | Neon; nová schema je aditívna, `ensureSchema` ju doplní pri prvom requeste |
 

@@ -5,9 +5,12 @@ import {
   touchApiTokenLastUsed,
 } from "./db";
 
+export type BotScope = "full" | "ustredna";
+
 export type BotActor = {
   id: string;
   name: string;
+  scope?: BotScope;
 };
 
 type EnvBot = BotActor & {
@@ -20,26 +23,41 @@ const BUILTIN_BOTS: Array<{
   name: string;
   tokenEnv: string;
   hashEnv: string;
+  scope: BotScope;
 }> = [
   {
     id: "servis",
     name: "Servis bot",
     tokenEnv: "SERVIS_BOT_API_TOKEN",
     hashEnv: "SERVIS_BOT_API_TOKEN_HASH",
+    scope: "full",
   },
   {
     id: "hotline",
     name: "Hotline bot",
     tokenEnv: "HOTLINE_BOT_API_TOKEN",
     hashEnv: "HOTLINE_BOT_API_TOKEN_HASH",
+    scope: "full",
   },
   {
     id: "elevenlabs",
     name: "ElevenLabs hotline",
     tokenEnv: "ELEVENLABS_BOT_API_TOKEN",
     hashEnv: "ELEVENLABS_BOT_API_TOKEN_HASH",
+    scope: "full",
+  },
+  {
+    id: "ustredna",
+    name: "Ústredňa Ozvena",
+    tokenEnv: "USTREDNA_BOT_API_TOKEN",
+    hashEnv: "USTREDNA_BOT_API_TOKEN_HASH",
+    scope: "ustredna",
   },
 ];
+
+export function actorScope(actor: Pick<BotActor, "scope">): BotScope {
+  return actor.scope ?? "full";
+}
 
 export function hashApiToken(token: string) {
   return createHash("sha256").update(token, "utf8").digest("hex");
@@ -88,6 +106,7 @@ export function loadEnvBots(): EnvBot[] {
     bots.push({
       id: spec.id,
       name: spec.name,
+      scope: spec.scope,
       token,
       tokenHash,
     });
@@ -111,7 +130,13 @@ export function loadEnvBots(): EnvBot[] {
             .trim()
             .toLowerCase();
           if (!id || !name || (!token && !tokenHash)) continue;
-          bots.push({ id, name, token: token || undefined, tokenHash });
+          bots.push({
+            id,
+            name,
+            scope: "full",
+            token: token || undefined,
+            tokenHash,
+          });
         }
       }
     } catch {
@@ -147,7 +172,7 @@ export async function authenticateBot(
   for (const bot of loadEnvBots()) {
     if (disabled.has(bot.id.toLowerCase())) continue;
     if (matchEnvBot(token, bot)) {
-      return { id: bot.id, name: bot.name };
+      return { id: bot.id, name: bot.name, scope: actorScope(bot) };
     }
   }
 
@@ -155,7 +180,7 @@ export async function authenticateBot(
   if (!row || row.revokedAt) return null;
   if (disabled.has(row.id.toLowerCase())) return null;
   await touchApiTokenLastUsed(row.id);
-  return { id: row.id, name: row.name };
+  return { id: row.id, name: row.name, scope: "full" };
 }
 
 export function hasAnyBotTokenConfigured() {

@@ -50,6 +50,7 @@ npm run dev
 | `SERVIS_BOT_API_TOKEN` | Bearer token pre Servis bot (API) |
 | `HOTLINE_BOT_API_TOKEN` | Bearer token pre Hotline bot (API) |
 | `ELEVENLABS_BOT_API_TOKEN` | Bearer token pre ElevenLabs hotline (Massiva Hotline) |
+| `USTREDNA_BOT_API_TOKEN_HASH` | SHA-256 hash tokenu pre Ústredňu Ozvena (produkcia: iba hash) |
 | `OSRM_URL` | voliteľné; predvolene `https://router.project-osrm.org` |
 | `NOMINATIM_URL` | voliteľné; predvolene `https://nominatim.openstreetmap.org` |
 | `OSM_USER_AGENT` | voliteľné; identifikácia voči Nominatim |
